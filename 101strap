@@ -40,6 +40,11 @@ elif [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+if [ ! -d "/run/udev" ]; then
+    echo "/run/udev not mounted. This will cause trouble when generating /etc/fstab. Stop"
+    exit 1
+fi
+
 # Create image file, EFI got 256M, and rootfs got remaining space
 truncate -s 5G "$WORKSPACE"/root.img
 parted --script -a optimal "$WORKSPACE"/root.img mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
@@ -89,7 +94,7 @@ deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe 
 chdo apt update
 
 # Install desktop apps
-inspkg xubuntu-core
+inspkg xubuntu-core vim xserver-xorg-video-vesa xserver-xorg-video-vmware open-vm-tools open-vm-tools-desktop
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
@@ -108,6 +113,8 @@ chdo adduser "$USER" sudo
 
 echo "ustclug-linux101" > "$ROOT/etc/hostname"
 echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
+
+genfstab -U -f / "$ROOT" >> "$ROOT/etc/fstab"
 
 # Install kernel and configure grub
 inspkg linux-image-virtual grub-efi-amd64 initramfs-tools
