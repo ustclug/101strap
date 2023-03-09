@@ -1,0 +1,119 @@
+#!/bin/bash
+
+set -e
+
+chdo() {
+    chroot "$ROOT" "$@"
+}
+
+enserv() {
+    chroot "$ROOT" systemctl enable "$@"
+}
+
+inspkg() {
+    DEBIAN_FRONTEND=noninteractive chroot "$ROOT" apt-get install --no-install-recommends --yes "$@"
+}
+
+cleanup() {
+    if [ ! -z "$DEBUG" ]; then
+        echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
+        /bin/bash
+    fi
+    umount "$ROOT/proc" || true
+    umount "$ROOT/sys" || true
+    umount "$ROOT/dev" || true
+    umount "$EFI" || true
+    umount "$ROOT" || true
+    losetup --detach "$LODEV" || true
+}
+trap cleanup EXIT
+
+WORKSPACE="/target"
+USER="ustc"
+PASSWORD="ustc"
+
+if [ ! -d "$WORKSPACE" ]; then
+    echo "$WORKSPACE is not a directory."
+    exit 1
+elif [ "$(id -u)" -ne 0 ]; then
+    echo "You are not root!"
+    exit 1
+fi
+
+# Create image file, EFI got 256M, and rootfs got remaining space
+truncate -s 5G "$WORKSPACE"/root.img
+parted --script -a optimal "$WORKSPACE"/root.img mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
+
+# Mount image file
+LODEV=$(losetup --find --show --partscan "$WORKSPACE"/root.img)
+# Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
+EFIPART="$LODEV"p1
+ROOTPART="$LODEV"p2
+
+# Sanity check. TODO: automatically calc the real partition size
+if [ $(blockdev --getsize64 "$EFIPART") != 254803968 ]; then
+    echo "Sanity check failed: EFI size unexpected"
+    losetup --detach "$LODEV"
+    exit 1
+fi
+if [ $(blockdev --getsize64 "$ROOTPART") != 5111808000 ]; then
+    echo "Sanity check failed: rootfs size unexpected"
+    losetup --detach "$LODEV"
+    exit 1
+fi
+
+# Format
+mkfs.fat -nEFI -F32 "$EFIPART"
+mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
+
+# Mount EFI partition and rootfs
+EFI="/mnt/rootfs/efi"
+ROOT="/mnt/rootfs"
+mkdir -p "$ROOT"
+mount "$ROOTPART" "$ROOT"
+mkdir -p "$EFI"
+mount "$EFIPART" "$EFI"
+
+debootstrap jammy "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
+mount proc "$ROOT/proc" -t proc
+mount sysfs "$ROOT/sys" -t sysfs
+mount --rbind /dev "$ROOT/dev"
+
+echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
+chdo apt update
+
+# Install desktop apps
+inspkg xubuntu-core
+
+# User and host configuration
+ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
+chdo dpkg-reconfigure --frontend noninteractive tzdata
+
+echo "en_US.UTF-8 UTF-8
+zh_CN.UTF8 UTF-8" > "$ROOT/etc/locale.gen"
+echo 'LANG=zh_CN.UTF-8
+LANGUAGE="zh_CN.UTF-8"
+LC_ALL="zh_CN.UTF-8"' > "$ROOT/etc/default/locale"
+chdo locale-gen
+
+chdo adduser --disabled-password --gecos "" "$USER"
+echo "$USER:$PASSWORD" | chdo chpasswd
+chdo adduser "$USER" sudo
+
+echo "ustclug-linux101" > "$ROOT/etc/hostname"
+echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
+
+# Install kernel and configure grub
+inspkg linux-image-virtual grub-efi-amd64 initramfs-tools
+# GRUB requires available initrd to use root=UUID=xxx
+chdo update-initramfs -k all -c
+# Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
+chdo grub-install --target=x86_64-efi "$LODEV" --efi-directory="/efi" --boot-directory="/boot" --bootloader-id="GRUB (VM)" --no-nvram --removable
+chdo update-grub
+
