@@ -92,9 +92,9 @@ chdo apt update
 inspkg desktop-base xubuntu-core vim xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
     virtualbox-guest-x11 network-manager-gnome pavucontrol xfce4-terminal xfce4-indicator-plugin xfce4-pulseaudio-plugin xfce4-statusnotifier-plugin \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
-    language-selectr-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
+    language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
     mate-calc mousepad xubuntu-docs firefox eog file-roller baobab evince \
-    adwata-icon-theme-full
+    adwaita-icon-theme-full
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
@@ -120,7 +120,7 @@ echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
 # Let NetworkManager manage networking
 echo "network:
   version: 2
-  renderer: NetworkManager" > /etc/netplan/01-netcfg.yaml
+  renderer: NetworkManager" > "$ROOT/etc/netplan/01-netcfg.yaml"
 
 # Install kernel and configure grub
 inspkg linux-image-virtual grub-efi-amd64 initramfs-tools
