@@ -98,7 +98,7 @@ inspkg desktop-base xubuntu-core vim htop strace xserver-xorg-video-vmware xserv
 
 # Update command-not-found database and upgrade packages
 chdo apt update
-chdo apt upgrade
+chdo apt upgrade -y
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
