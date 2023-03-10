@@ -88,13 +88,17 @@ deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe 
 #deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
 chdo apt update
 
-# Install desktop apps. TODO: replace firefox to non-snap version
-inspkg desktop-base xubuntu-core vim xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
-    virtualbox-guest-x11 network-manager-gnome pavucontrol xfce4-terminal xfce4-indicator-plugin xfce4-pulseaudio-plugin xfce4-statusnotifier-plugin \
+# Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
+inspkg desktop-base xubuntu-core vim htop strace xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
+    virtualbox-guest-x11 network-manager-gnome pavucontrol xfce4-terminal xfce4-indicator-plugin xfce4-pulseaudio-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
-    mate-calc mousepad xubuntu-docs firefox eog file-roller baobab evince \
-    adwaita-icon-theme-full
+    mate-calc mousepad xubuntu-docs epiphany-browser eog file-roller baobab evince mpv geary \
+    adwaita-icon-theme-full command-not-found
+
+# Update command-not-found database and upgrade packages
+chdo apt update
+chdo apt upgrade
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
@@ -131,5 +135,5 @@ chdo grub-install --target=x86_64-efi "$LODEV" --efi-directory="/efi" --boot-dir
 chdo update-grub
 
 # Cleanup
-chdo apt clean
+chdo apt clean && apt autoremove
 
