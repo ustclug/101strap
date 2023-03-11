@@ -67,7 +67,7 @@ mkfs.fat -nEFI -F32 "$EFIPART"
 mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
 
 # Mount EFI partition and rootfs
-EFI="/mnt/rootfs/efi"
+EFI="/mnt/rootfs/boot/efi"
 ROOT="/mnt/rootfs"
 mkdir -p "$ROOT"
 mount "$ROOTPART" "$ROOT"
@@ -89,7 +89,7 @@ deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe 
 chdo apt update
 
 # Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
-inspkg desktop-base xubuntu-core vim htop strace xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
+inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
     virtualbox-guest-x11 network-manager-gnome pavucontrol xfce4-terminal xfce4-indicator-plugin xfce4-pulseaudio-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin mugshot \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
@@ -102,7 +102,7 @@ chdo apt upgrade -y
 
 # Adjust xfce clock to display date in correct format
 # By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
-sed -i "s/%d %b/%x/" /etc/xdg/xdg-xubuntu/xfce4/panel/default.xml
+sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
@@ -123,7 +123,9 @@ echo "ustclug-linux101" > "$ROOT/etc/hostname"
 echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
 
 ROOTUUID=$(blkid -o export $ROOTPART | grep -e ^UUID | cut -d'=' -f2)
-echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
+EFIUUID=$(blkid -o export $EFIPART | grep -e ^UUID | cut -d '=' -f2)
+echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1
+UUID=$EFIUUID\t/boot/efi\tvfat\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
 
 # Let NetworkManager manage networking
 echo "network:
@@ -135,7 +137,7 @@ inspkg linux-image-virtual grub-efi-amd64 initramfs-tools cloud-initramfs-growro
 # GRUB requires available initrd to use root=UUID=xxx
 chdo update-initramfs -k all -c
 # Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
-chdo grub-install --target=x86_64-efi "$LODEV" --efi-directory="/efi" --boot-directory="/boot" --bootloader-id="GRUB (VM)" --no-nvram --removable
+chdo grub-install --target=x86_64-efi "$LODEV" --no-nvram
 chdo update-grub
 
 # Cleanup
