@@ -87,6 +87,7 @@ deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe m
 deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse
 #deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
 chdo apt update
+chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
 # Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
 inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
@@ -94,7 +95,8 @@ inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-vi
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
     mate-calc mousepad epiphany-browser eog file-roller baobab evince \
-    adwaita-icon-theme-full command-not-found gparted policykit-1-gnome
+    adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
+    iputils-ping netplan.io
 
 # Update command-not-found database and upgrade packages
 chdo apt update
@@ -108,18 +110,20 @@ sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
 sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
 # Remove help (not working in epiphany, and taking space)
 sed -i "s/,xfhelp4.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
-# Set default browser to epiphany
+# Set default browser to debian default browser (here it is epiphany)
 sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/helpers.rc"
+# Use default selection color in xfce4-terminal
+sed -i "/ColorSelectionUseDefault/d" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/terminal/terminalrc"
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
 chdo dpkg-reconfigure --frontend noninteractive tzdata
 
-echo "en_US.UTF-8 UTF-8
-zh_CN.UTF8 UTF-8" > "$ROOT/etc/locale.gen"
+echo "en_US.UTF-8 UTF-8" > "$ROOT/etc/locale.gen"
 echo 'LANG=zh_CN.UTF-8
 LANGUAGE="zh_CN.UTF-8"
 LC_ALL="zh_CN.UTF-8"' > "$ROOT/etc/default/locale"
+# /var/lib/locales/supported.d/zh-hans contains zh_CN.UTF-8
 chdo locale-gen
 
 chdo adduser --disabled-password --gecos "" "$USER"
@@ -148,5 +152,6 @@ chdo grub-install --target=x86_64-efi "$LODEV" --no-nvram
 chdo update-grub
 
 # Cleanup
-chdo apt clean && apt autoremove
+chdo apt autoremove -y && apt clean
+rm -rf "$ROOT/var/cache"/*
 
