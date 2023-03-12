@@ -90,10 +90,10 @@ chdo apt update
 
 # Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
 inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
-    virtualbox-guest-x11 network-manager-gnome pavucontrol xfce4-terminal xfce4-indicator-plugin xfce4-pulseaudio-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin mugshot \
+    virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin mugshot \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
-    mate-calc mousepad xubuntu-docs epiphany-browser eog file-roller baobab evince mpv geary \
+    mate-calc mousepad epiphany-browser eog file-roller baobab evince \
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome
 
 # Update command-not-found database and upgrade packages
@@ -103,6 +103,13 @@ chdo apt upgrade -y
 # Adjust xfce clock to display date in correct format
 # By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
 sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
+# Remove "Mail reader"
+sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
+sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
+# Remove help (not working in epiphany, and taking space)
+sed -i "s/,xfhelp4.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
+# Set default browser to epiphany
+sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/helpers.rc"
 
 # User and host configuration
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
@@ -133,7 +140,7 @@ echo "network:
   renderer: NetworkManager" > "$ROOT/etc/netplan/01-netcfg.yaml"
 
 # Install kernel and configure grub
-inspkg linux-image-virtual grub-efi-amd64 initramfs-tools cloud-initramfs-growroot
+inspkg linux-image-virtual grub-efi initramfs-tools cloud-initramfs-growroot
 # GRUB requires available initrd to use root=UUID=xxx
 chdo update-initramfs -k all -c
 # Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
