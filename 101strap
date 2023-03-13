@@ -82,7 +82,7 @@ mount --rbind /dev "$ROOT/dev"
 # Fill the blank space with 0
 cat "/dev/zero" > "$ROOT/zero.fill" || true
 sync
-rm $ROOT/zero.fill 
+rm $ROOT/zero.fill
 
 # Cleanup
 chdo apt autoremove -y && apt clean
