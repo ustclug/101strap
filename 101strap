@@ -80,7 +80,9 @@ mount sysfs "$ROOT/sys" -t sysfs
 mount --rbind /dev "$ROOT/dev"
 
 # Fill the blank space with 0
-cat "$ROOT/dev/zero" > "$ROOT/zero.fill"; sync; sleep 1; sync; rm -f "$ROOT/dev/zero" || true
+cat "$ROOT/dev/zero" > "$ROOT/zero.fill"; || true
+sync; || true 
+sleep 1; sync; rm -f "$ROOT/dev/zero" 
 
 # Cleanup
 chdo apt autoremove -y && apt clean
