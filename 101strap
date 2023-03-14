@@ -154,7 +154,19 @@ sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default
 sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
 chdo update-grub
 
+# Fill the blank space with 0
+cat "/dev/zero" > "$ROOT/zero.fill" || true
+sync
+rm -f $ROOT/zero.fill
+
+# Vmware: convert .img to .vmdk
+qemu-img convert -pO vmdk "$WORKSPACE"/root.img "$WORKSPACE"/root.vmdk
+# VirtualBox: convert .img to .vdi
+qemu-img convert -pO vdi "$WORKSPACE"/root.img "$WORKSPACE"/root.vdi
+
+# Delete .img
+rm -f "$WORKSPACE"/root.img
+
 # Cleanup
 chdo apt autoremove -y && apt clean
 rm -rf "$ROOT/var/cache"/*
-
