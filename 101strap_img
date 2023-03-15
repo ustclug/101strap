@@ -19,11 +19,7 @@ cleanup() {
         echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
         /bin/bash
     fi
-    umount "$ROOT/proc" || true
-    umount "$ROOT/sys" || true
-    umount "$ROOT/dev" || true
-    umount "$EFI" || true
-    umount "$ROOT" || true
+    umount -R "$ROOT" || true
     losetup --detach "$LODEV" || true
 }
 trap cleanup EXIT
@@ -77,7 +73,7 @@ mount "$EFIPART" "$EFI"
 debootstrap jammy "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
 mount proc "$ROOT/proc" -t proc
 mount sysfs "$ROOT/sys" -t sysfs
-mount --rbind /dev "$ROOT/dev"
+mount --rbind --make-rslave /dev "$ROOT/dev"
 
 echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
 deb https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
