@@ -8,3 +8,4 @@ RUN sed -Ei 's/(archive|security)\.ubuntu\.com/mirrors.ustc.edu.cn/g' /etc/apt/s
 
 CMD ["/bin/bash", "/srv/101strap"]
 
+CMD ["/bin/bash", "/srv/101strap_disk"]
