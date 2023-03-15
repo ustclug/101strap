@@ -154,11 +154,11 @@ sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default
 sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
 chdo update-grub
 
+# Cleanup
+chdo apt autoremove -y && apt clean
+rm -rf "$ROOT/var/cache"/*
+
 # Fill the blank space with 0
 cat "/dev/zero" > "$ROOT/zero.fill" || true
 sync
 rm -f $ROOT/zero.fill
-
-# Cleanup
-chdo apt autoremove -y && apt clean
-rm -rf "$ROOT/var/cache"/*
