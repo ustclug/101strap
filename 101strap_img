@@ -1,0 +1,164 @@
+#!/bin/bash
+
+set -e
+
+chdo() {
+    chroot "$ROOT" "$@"
+}
+
+enserv() {
+    chroot "$ROOT" systemctl enable "$@"
+}
+
+inspkg() {
+    DEBIAN_FRONTEND=noninteractive chroot "$ROOT" apt-get install --no-install-recommends --yes "$@"
+}
+
+cleanup() {
+    if [ -n "$DEBUG" ]; then
+        echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
+        /bin/bash
+    fi
+    umount "$ROOT/proc" || true
+    umount "$ROOT/sys" || true
+    umount "$ROOT/dev" || true
+    umount "$EFI" || true
+    umount "$ROOT" || true
+    losetup --detach "$LODEV" || true
+}
+trap cleanup EXIT
+
+WORKSPACE="/target"
+USER="ustc"
+PASSWORD="ustc"
+
+if [ ! -d "$WORKSPACE" ]; then
+    echo "$WORKSPACE is not a directory."
+    exit 1
+elif [ "$(id -u)" -ne 0 ]; then
+    echo "You are not root!"
+    exit 1
+fi
+
+# Create image file, EFI got 256M, and rootfs got remaining space
+truncate -s 5G "$WORKSPACE"/root.img
+parted --script -a optimal "$WORKSPACE"/root.img mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
+
+# Mount image file
+LODEV=$(losetup --find --show --partscan "$WORKSPACE"/root.img)
+# Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
+EFIPART="$LODEV"p1
+ROOTPART="$LODEV"p2
+
+# Sanity check. TODO: automatically calc the real partition size
+if [ "$(blockdev --getsize64 "$EFIPART")" != 254803968 ]; then
+    echo "Sanity check failed: EFI size unexpected"
+    losetup --detach "$LODEV"
+    exit 1
+fi
+if [ "$(blockdev --getsize64 "$ROOTPART")" != 5111808000 ]; then
+    echo "Sanity check failed: rootfs size unexpected"
+    losetup --detach "$LODEV"
+    exit 1
+fi
+
+# Format
+mkfs.fat -nEFI -F32 "$EFIPART"
+mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
+
+# Mount EFI partition and rootfs
+EFI="/mnt/rootfs/boot/efi"
+ROOT="/mnt/rootfs"
+mkdir -p "$ROOT"
+mount "$ROOTPART" "$ROOT"
+mkdir -p "$EFI"
+mount "$EFIPART" "$EFI"
+
+debootstrap jammy "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
+mount proc "$ROOT/proc" -t proc
+mount sysfs "$ROOT/sys" -t sysfs
+mount --rbind /dev "$ROOT/dev"
+
+echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
+chdo apt update
+chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
+
+# Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
+inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
+    virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin mugshot \
+    software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
+    language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
+    mate-calc mousepad epiphany-browser eog file-roller baobab evince synaptic \
+    adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
+    iputils-ping netplan.io
+
+# Update command-not-found database and upgrade packages
+chdo apt update
+chdo apt upgrade -y
+
+# Adjust xfce clock to display date in correct format
+# By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
+sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
+# Remove "Mail reader"
+sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
+sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
+# Remove help (not working in epiphany, and taking space)
+sed -i "s/,xfhelp4.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
+# Set default browser to debian default browser (here it is epiphany)
+sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/helpers.rc"
+# Use default selection color in xfce4-terminal
+sed -i "/ColorSelectionUseDefault/d" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/terminal/terminalrc"
+
+# User and host configuration
+ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
+chdo dpkg-reconfigure --frontend noninteractive tzdata
+
+echo "en_US.UTF-8 UTF-8" > "$ROOT/etc/locale.gen"
+echo 'LANG=zh_CN.UTF-8
+LANGUAGE="zh_CN.UTF-8"
+LC_ALL="zh_CN.UTF-8"' > "$ROOT/etc/default/locale"
+# /var/lib/locales/supported.d/zh-hans contains zh_CN.UTF-8
+chdo locale-gen
+
+chdo adduser --disabled-password --gecos "" "$USER"
+echo "$USER:$PASSWORD" | chdo chpasswd
+chdo adduser "$USER" sudo
+
+echo "ustclug-linux101" > "$ROOT/etc/hostname"
+echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
+
+ROOTUUID=$(blkid -o export $ROOTPART | grep -e ^UUID | cut -d'=' -f2)
+EFIUUID=$(blkid -o export $EFIPART | grep -e ^UUID | cut -d '=' -f2)
+echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1
+UUID=$EFIUUID\t/boot/efi\tvfat\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
+
+# Let NetworkManager manage networking
+echo "network:
+  version: 2
+  renderer: NetworkManager" > "$ROOT/etc/netplan/01-netcfg.yaml"
+
+# Install kernel and configure grub
+inspkg linux-image-virtual grub-efi initramfs-tools cloud-initramfs-growroot
+# GRUB requires available initrd to use root=UUID=xxx
+chdo update-initramfs -k all -c
+# Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
+chdo grub-install --target=x86_64-efi "$LODEV" --no-nvram
+# Let grub show menu for convenience of debugging
+sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default/grub"
+sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
+chdo update-grub
+
+# Fill the blank space with 0
+cat "/dev/zero" > "$ROOT/zero.fill" || true
+sync
+rm -f $ROOT/zero.fill
+
+# Cleanup
+chdo apt autoremove -y && apt clean
+rm -rf "$ROOT/var/cache"/*
