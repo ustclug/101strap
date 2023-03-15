@@ -22,9 +22,3 @@ qemu-system-x86_64 -machine accel=kvm -m 1024m -hda ./root.img -bios /usr/share/
   ```dockerfile
   CMD ["/bin/bash", "/srv/101strap_img"]
   ```
-
-+ If you only want to compress and convert the .img image to an OVA file, which is usually needed during debugging, you can modify the last line of the Dockerfile to: 
-
-  ```dockerfile
-  CMD ["/bin/bash", "/srv/101strap_disk"]
-  ```

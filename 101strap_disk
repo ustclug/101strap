@@ -10,4 +10,4 @@ qemu-img convert -pO vmdk "$WORKSPACE"/root.img "$WORKSPACE"/root.vmdk
 qemu-img convert -pO vdi "$WORKSPACE"/root.img "$WORKSPACE"/root.vdi
 
 # Delete .img
-rm -f "$WORKSPACE"/root.img
+# rm -f "$WORKSPACE"/root.img
