@@ -18,7 +18,7 @@ qemu-system-x86_64 -machine accel=kvm -m 1024m -hda ./root.qcow2 -bios /usr/shar
 
 + If you need to automate the process of generating an image, compressing it, and converting it to an OVA file, you can run the above commands directly. 
 
-+ If you only want to automate the process of generating a .img image, you can modify the last line of the Dockerfile to: 
++ If you only want to automate the process of generating a .qcow2 image, you can modify the last line of the Dockerfile to: 
 
   ```dockerfile
   CMD ["/bin/bash", "/srv/101strap_img"]
