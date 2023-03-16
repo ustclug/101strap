@@ -21,7 +21,7 @@ cleanup() {
     fi
     umount "$EFI" || true
     umount -R "$ROOT" || true
-    losetup --detach "$LODEV" || true
+    qemu-nbd -d "$NBD" || true
 }
 trap cleanup EXIT
 
@@ -35,27 +35,29 @@ if [ ! -d "$WORKSPACE" ]; then
 elif [ "$(id -u)" -ne 0 ]; then
     echo "You are not root!"
     exit 1
+elif [ ! -b "$NBD" ]; then
+    echo "$NBD is not block device"
+    exit 1
 fi
 
 # Create image file, EFI got 256M, and rootfs got remaining space
-truncate -s 5G "$WORKSPACE"/root.img
-parted --script -a optimal "$WORKSPACE"/root.img mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
+qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 5G
+qemu-nbd -c "$NBD" --discard=unmap --detect-zeroes=unmap "$WORKSPACE"/root.qcow2
+parted --script -a optimal "$NBD" mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
 
-# Mount image file
-LODEV=$(losetup --find --show --partscan "$WORKSPACE"/root.img)
 # Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
-EFIPART="$LODEV"p1
-ROOTPART="$LODEV"p2
+EFIPART="$NBD"p1
+ROOTPART="$NBD"p2
 
 # Sanity check. TODO: automatically calc the real partition size
 if [ "$(blockdev --getsize64 "$EFIPART")" != 254803968 ]; then
     echo "Sanity check failed: EFI size unexpected"
-    losetup --detach "$LODEV"
+    qemu-nbd -d "$NBD"
     exit 1
 fi
 if [ "$(blockdev --getsize64 "$ROOTPART")" != 5111808000 ]; then
     echo "Sanity check failed: rootfs size unexpected"
-    losetup --detach "$LODEV"
+    qemu-nbd -d "$NBD"
     exit 1
 fi
 
@@ -67,7 +69,7 @@ mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
 EFI="/mnt/rootfs/boot/efi"
 ROOT="/mnt/rootfs"
 mkdir -p "$ROOT"
-mount "$ROOTPART" "$ROOT"
+mount -o defaults,discard "$ROOTPART" "$ROOT"
 mkdir -p "$EFI"
 mount "$EFIPART" "$EFI"
 
@@ -145,7 +147,7 @@ inspkg linux-image-virtual grub-efi initramfs-tools cloud-initramfs-growroot
 # GRUB requires available initrd to use root=UUID=xxx
 chdo update-initramfs -k all -c
 # Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
-chdo grub-install --target=x86_64-efi "$LODEV" --no-nvram
+chdo grub-install --target=x86_64-efi "$NBD" --no-nvram
 # Let grub show menu for convenience of debugging
 sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default/grub"
 sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
@@ -155,7 +157,7 @@ chdo update-grub
 chdo apt autoremove -y && apt clean
 rm -rf "$ROOT/var/cache"/*
 
-# Fill the blank space with 0
-cat "/dev/zero" > "$ROOT/zero.fill" || true
+# Trim filesystems
 sync
-rm -f $ROOT/zero.fill
+fstrim -v "$EFI"
+fstrim -v "$ROOT"

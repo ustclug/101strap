@@ -5,9 +5,9 @@ set -ex
 WORKSPACE="/target"
 
 # Vmware: convert .img to .vmdk
-qemu-img convert -pO vmdk "$WORKSPACE"/root.img "$WORKSPACE"/root.vmdk
+qemu-img convert -pO vmdk "$WORKSPACE"/root.qcow2 "$WORKSPACE"/root.vmdk
 # VirtualBox: convert .img to .vdi
-qemu-img convert -pO vdi "$WORKSPACE"/root.img "$WORKSPACE"/root.vdi
+qemu-img convert -pO vdi "$WORKSPACE"/root.qcow2 "$WORKSPACE"/root.vdi
 
 # Delete .img
-# rm -f "$WORKSPACE"/root.img
+# rm -f "$WORKSPACE"/root.qcow2
