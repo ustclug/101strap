@@ -19,6 +19,7 @@ cleanup() {
         echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
         /bin/bash
     fi
+    umount "$EFI" || true
     umount -R "$ROOT" || true
     losetup --detach "$LODEV" || true
 }
