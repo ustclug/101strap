@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This project aims to automate the generation of XUbuntu, which will be used as a example in [linux101](https://101.lug.ustc.edu.cn/).
+This project aims to automate the generation of XUbuntu, which will be used as a example in [linux101](https://101.lug.ustc.edu.cn/). This project developed by [taoky](https://github.com/taoky), [RTXUX](https://github.com/RTXUX), and [xuao1](https://github.com/xuao1).
 
 ## Build
 
@@ -23,6 +23,8 @@ docker run -it --privileged --rm -v $(pwd):/srv:ro -v ~/tmp/101:/target -v /usr/
   ```dockerfile
   CMD ["/bin/bash", "/srv/101strap_img"]
   ```
+
++ If you want more information, see the Devlog.
 
 ## Run
 
