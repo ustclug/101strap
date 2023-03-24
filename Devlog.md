@@ -12,9 +12,8 @@
 
   + 安装后，因为 xfec4 启动出了问题，所以又额外安装了 xinit 和 xserver-xorg，可以成功启动终端，但是不知道解决问题的是哪一个
 
-+ qemu 启动后 apt 出现错误：
++ qemu 启动后 apt 出现错误.
 
-  ![image-20230216222820887](C:\Users\86198\AppData\Roaming\Typora\typora-user-images\image-20230216222820887.png)
 
 ​	注：该错误在 systemd-nspawn 启动时没有，目前判断是缺少必要的网络包
 
@@ -28,7 +27,7 @@ VirtualBox 和 VMware 两个软件均支持自动导出 ova 文件
 
 删除 snap
 
-硬盘压缩：需要先做 0 填充，再进行硬盘压缩。VMware Workstation 支持直接压缩，VirtualBox 需要在其安装路径下使用 VBoxManage 进行压缩。![image-20230309110737624](C:\Users\86198\AppData\Roaming\Typora\typora-user-images\image-20230309110737624.png)
+硬盘压缩：需要先做 0 填充，再进行硬盘压缩。VMware Workstation 支持直接压缩，VirtualBox 需要在其安装路径下使用 VBoxManage 进行压缩。
 
 
 
