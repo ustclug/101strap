@@ -1,13 +1,139 @@
 #!/bin/bash
 
-set -e
+set -ex
+
+chdo() {
+    chroot "$ROOT" "$@"
+}
 
 WORKSPACE="/target"
 
 # Vmware: convert .img to .vmdk
-qemu-img convert -pO vmdk "$WORKSPACE"/root.img "$WORKSPACE"/root.vmdk
-# VirtualBox: convert .img to .vdi
-qemu-img convert -pO vdi "$WORKSPACE"/root.img "$WORKSPACE"/root.vdi
+qemu-img convert -pO vmdk "$WORKSPACE"/root.qcow2 "$WORKSPACE"/root.vmdk
 
-# Delete .img
-# rm -f "$WORKSPACE"/root.img
+# VirtualBox: convert .img to .vdi
+qemu-img convert -pO vdi "$WORKSPACE"/root.qcow2 "$WORKSPACE"/root.vdi
+
+# VMware: create .vmx
+echo ".encoding = \"GBK\"
+config.version = \"8\"
+virtualHW.version = \"18\"
+mks.enable3d = \"TRUE\"
+pciBridge0.present = \"TRUE\"
+pciBridge4.present = \"TRUE\"
+pciBridge4.virtualDev = \"pcieRootPort\"
+pciBridge4.functions = \"8\"
+pciBridge5.present = \"TRUE\"
+pciBridge5.virtualDev = \"pcieRootPort\"
+pciBridge5.functions = \"8\"
+pciBridge6.present = \"TRUE\"
+pciBridge6.virtualDev = \"pcieRootPort\"
+pciBridge6.functions = \"8\"
+pciBridge7.present = \"TRUE\"
+pciBridge7.virtualDev = \"pcieRootPort\"
+pciBridge7.functions = \"8\"
+vmci0.present = \"TRUE\"
+hpet0.present = \"TRUE\"
+nvram = \"VMware-Xubuntu-22.04-amd64.nvram\"
+virtualHW.productCompatibility = \"hosted\"
+powerType.powerOff = \"soft\"
+powerType.powerOn = \"soft\"
+powerType.suspend = \"soft\"
+powerType.reset = \"soft\"
+displayName = \"VMware-Xubuntu-22.04-amd64\"
+usb.vbluetooth.startConnected = \"TRUE\"
+guestOS = \"ubuntu-64\"
+tools.syncTime = \"FALSE\"
+sound.autoDetect = \"TRUE\"
+sound.fileName = \"-1\"
+sound.present = \"TRUE\"
+vcpu.hotadd = \"TRUE\"
+memsize = \"1024\"
+mem.hotadd = \"TRUE\"
+scsi0.virtualDev = \"lsilogic\"
+scsi0.present = \"TRUE\"
+scsi0:0.fileName = \"root.vmdk\"
+scsi0:0.present = \"TRUE\"
+usb.present = \"TRUE\"
+ehci.present = \"TRUE\"
+svga.graphicsMemoryKB = \"8388608\"
+ethernet0.connectionType = \"nat\"
+ethernet0.addressType = \"generated\"
+ethernet0.virtualDev = \"e1000\"
+ethernet0.present = \"TRUE\"
+extendedConfigFile = \"VMware-Xubuntu-22.04-amd64.vmxf\"
+floppy0.present = \"FALSE\"
+firmware = \"efi\"
+uuid.bios = \"56 4d d6 24 f9 04 d5 18-04 9e 9d d2 ab b7 54 53\"
+uuid.location = \"56 4d d6 24 f9 04 d5 18-04 9e 9d d2 ab b7 54 53\"
+scsi0:0.redo = \"\"
+pciBridge0.pciSlotNumber = \"17\"
+pciBridge4.pciSlotNumber = \"21\"
+pciBridge5.pciSlotNumber = \"22\"
+pciBridge6.pciSlotNumber = \"23\"
+pciBridge7.pciSlotNumber = \"24\"
+scsi0.pciSlotNumber = \"16\"
+usb.pciSlotNumber = \"32\"
+ethernet0.pciSlotNumber = \"33\"
+sound.pciSlotNumber = \"34\"
+ehci.pciSlotNumber = \"35\"
+vmci0.pciSlotNumber = \"36\"
+svga.vramSize = \"268435456\"
+vmotion.checkpointFBSize = \"4194304\"
+vmotion.checkpointSVGAPrimarySize = \"268435456\"
+vmotion.svga.mobMaxSize = \"1073741824\"
+vmotion.svga.graphicsMemoryKB = \"8388608\"
+vmotion.svga.supports3D = \"1\"
+vmotion.svga.baseCapsLevel = \"9\"
+vmotion.svga.maxPointSize = \"1\"
+vmotion.svga.maxTextureSize = \"16384\"
+vmotion.svga.maxVolumeExtent = \"2048\"
+vmotion.svga.maxTextureAnisotropy = \"16\"
+vmotion.svga.lineStipple = \"0\"
+vmotion.svga.dxMaxConstantBuffers = \"14\"
+vmotion.svga.dxProvokingVertex = \"0\"
+vmotion.svga.sm41 = \"1\"
+vmotion.svga.multisample2x = \"1\"
+vmotion.svga.multisample4x = \"1\"
+vmotion.svga.msFullQuality = \"1\"
+vmotion.svga.logicOps = \"1\"
+vmotion.svga.bc67 = \"9\"
+vmotion.svga.sm5 = \"1\"
+vmotion.svga.multisample8x = \"1\"
+vmotion.svga.logicBlendOps = \"1\"
+ethernet0.generatedAddress = \"00:0c:29:b7:54:53\"
+ethernet0.generatedAddressOffset = \"0\"
+vmci0.id = \"-1414048685\"
+monitor.phys_bits_used = \"45\"
+cleanShutdown = \"TRUE\"
+softPowerOff = \"FALSE\"
+usb:1.speed = \"2\"
+usb:1.present = \"TRUE\"
+usb:1.deviceType = \"hub\"
+usb:1.port = \"1\"
+usb:1.parent = \"-1\"
+svga.guestBackedPrimaryAware = \"TRUE\"
+guestOS.detailed.data = \"architecture='X86' bitness='64' distroName='Ubuntu 22.04.2 LTS' distroVersion='22.04' familyName='Linux' kernelVersion='5.15.0-67-generic' prettyName='Ubuntu 22.04.2 LTS'\"
+usb:0.present = \"TRUE\"
+usb:0.deviceType = \"hid\"
+usb:0.port = \"0\"
+usb:0.parent = \"-1\"" > "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.vmx
+
+# Vmware: export ova
+/Ovftool/ovftool "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.vmx "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.ova
+
+# VirtualBox: config
+VBoxManage createvm --name "VirtualBox-Xubuntu-22.04-amd64" --ostype "Ubuntu_64" --register
+VBoxManage storagectl "VirtualBox-Xubuntu-22.04-amd64" --name "SATA Controller" --add sata --controller IntelAHCI
+VBoxManage storageattach "VirtualBox-Xubuntu-22.04-amd64" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "$WORKSPACE"/root.vdi
+VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --memory 1024 --cpus 1
+VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --boot1 disk --boot2 none --boot3 none --boot4 none --rtcuseutc on --firmware efi
+VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --mouse usbtablet --vram 32 --usb on --usbehci on
+VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --nic1 nat
+VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --pae off --longmode on --x2apic on --largepages on
+
+# VirtualBox: export ova
+VBoxManage export "VirtualBox-Xubuntu-22.04-amd64" --output "$WORKSPACE"/VirtualBox-Xubuntu-22.04-amd64.ova
+
+# Delete .qcow2
+# rm -f "$WORKSPACE"/root.qcow2
