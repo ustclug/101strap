@@ -76,7 +76,6 @@ mount "$EFIPART" "$EFI"
 debootstrap jammy "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
 mount proc "$ROOT/proc" -t proc
 mount sysfs "$ROOT/sys" -t sysfs
-mount --rbind --make-rslave /dev "$ROOT/dev"
 
 echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
 deb https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
@@ -142,6 +141,9 @@ echo "network:
   version: 2
   renderer: NetworkManager" > "$ROOT/etc/netplan/01-netcfg.yaml"
 
+# guest's udev messes up with host's /dev (files like /dev/kvm will have their group owners set to a wrong value)
+# so don't mount /dev inside chroot rootfs until last moment
+mount --rbind --make-rslave /dev "$ROOT/dev"
 # Install kernel and configure grub
 inspkg linux-image-virtual grub-efi initramfs-tools cloud-initramfs-growroot
 # GRUB requires available initrd to use root=UUID=xxx
