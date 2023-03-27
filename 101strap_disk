@@ -135,5 +135,8 @@ VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --pae off --longmode on --x
 # VirtualBox: export ova
 VBoxManage export "VirtualBox-Xubuntu-22.04-amd64" --output "$WORKSPACE"/VirtualBox-Xubuntu-22.04-amd64.ova
 
+# Update permission
+chmod 644 "$WORKSPACE"/*.ova
+
 # Delete .qcow2
 # rm -f "$WORKSPACE"/root.qcow2

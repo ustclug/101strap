@@ -131,8 +131,8 @@ chdo adduser "$USER" sudo
 echo "ustclug-linux101" > "$ROOT/etc/hostname"
 echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
 
-ROOTUUID=$(blkid -o export $ROOTPART | grep -e ^UUID | cut -d'=' -f2)
-EFIUUID=$(blkid -o export $EFIPART | grep -e ^UUID | cut -d '=' -f2)
+ROOTUUID=$(blkid -o export "$ROOTPART" | grep -e ^UUID | cut -d'=' -f2)
+EFIUUID=$(blkid -o export "$EFIPART" | grep -e ^UUID | cut -d '=' -f2)
 echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1
 UUID=$EFIUUID\t/boot/efi\tvfat\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
 

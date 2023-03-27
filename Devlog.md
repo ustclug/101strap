@@ -2,22 +2,19 @@
 
 ## 方案一：mkosi
 
-`mkosi` stands for *Make Operating System Image*, and is a tool for generating an OS tree or image that can be booted.
+`mkosi` stands for _Make Operating System Image_, and is a tool for generating an OS tree or image that can be booted.
 
 前置工作：[xuao1/mkosi: mkosi (github.com)](https://github.com/xuao1/mkosi)
 
 目前存在的问题有：
 
-+ 启动后打不开终端：尝试安装 xterm 解决
+- 启动后打不开终端：尝试安装 xterm 解决
 
-  + 安装后，因为 xfec4 启动出了问题，所以又额外安装了 xinit 和 xserver-xorg，可以成功启动终端，但是不知道解决问题的是哪一个
+  - 安装后，因为 xfec4 启动出了问题，所以又额外安装了 xinit 和 xserver-xorg，可以成功启动终端，但是不知道解决问题的是哪一个
 
-+ qemu 启动后 apt 出现错误.
+- qemu 启动后 apt 出现错误.
 
-
-​	注：该错误在 systemd-nspawn 启动时没有，目前判断是缺少必要的网络包
-
-
+​ 注：该错误在 systemd-nspawn 启动时没有，目前判断是缺少必要的网络包
 
 ## 方案二：采用现有镜像
 
@@ -28,8 +25,6 @@ VirtualBox 和 VMware 两个软件均支持自动导出 ova 文件
 删除 snap
 
 硬盘压缩：需要先做 0 填充，再进行硬盘压缩。VMware Workstation 支持直接压缩，VirtualBox 需要在其安装路径下使用 VBoxManage 进行压缩。
-
-
 
 ## 方案三：101strap
 
@@ -43,7 +38,7 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 
 对于本项目的使用：
 
-我们致力于全部流程均为自动化实现，理论上只需要执行 README 中 Build 下的三条指令即可。但在那之前，你需要首先安装 [ovftool](https://developer.vmware.com/web/tool/4.4.0/ovf)，并将其放在 /usr/local. 
+我们致力于全部流程均为自动化实现，理论上只需要执行 README 中 Build 下的三条指令即可。但在那之前，你需要首先安装 [ovftool](https://developer.vmware.com/web/tool/4.4.0/ovf)，并将其放在 /usr/local.
 
 注意到，本项目是自动化生成 XUbuntu22.04，所以如果之后希望复用本项目生成其他版本的 XUbuntu，你需要更改脚本中的部分内容，包括但不限于 “22.04” 字样。
 
@@ -87,11 +82,11 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 主要功能概括如下：
 
 1.  将 root.qcow2 转换成 vmdk 和 vdi 文件，前者用于 VMware，后者用于 VirtualBox。
-2. 为VMware创建一个.vmx 文件，定义虚拟机的各种配置信息，如内存、CPU、硬盘等。
-3. 使用 ovftool 将 VMware 的虚拟机配置文件导出为 OVA 格式。
-4. 为 VirtualBox 创建一个虚拟机，将前面转换好的 VDI 磁盘镜像关联到虚拟机，指定操作系统类型。
-5. 配置 VirtualBox 虚拟机的其他设置，如内存、CPU、启动顺序、固件类型、USB 设置等。
-6. 使用 VBoxManage 将 VirtualBox 虚拟机导出为 OVA 格式，便于分发和部署。
+2.  为 VMware 创建一个.vmx 文件，定义虚拟机的各种配置信息，如内存、CPU、硬盘等。
+3.  使用 ovftool 将 VMware 的虚拟机配置文件导出为 OVA 格式。
+4.  为 VirtualBox 创建一个虚拟机，将前面转换好的 VDI 磁盘镜像关联到虚拟机，指定操作系统类型。
+5.  配置 VirtualBox 虚拟机的其他设置，如内存、CPU、启动顺序、固件类型、USB 设置等。
+6.  使用 VBoxManage 将 VirtualBox 虚拟机导出为 OVA 格式，便于分发和部署。
 
 ### 补充
 
@@ -101,7 +96,7 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 
 1. 安装 VBoxManage
 
-2. 使用 VBoxManage 创建一个新的虚拟机，指定操作系统版本，并将 VDI 文件添加为虚拟硬盘                             
+2. 使用 VBoxManage 创建一个新的虚拟机，指定操作系统版本，并将 VDI 文件添加为虚拟硬盘
 
    ```shell
    VBoxManage createvm --name "My_VM" --ostype "Ubuntu_64" --register
@@ -111,80 +106,80 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 
 3. 配置虚拟机：
 
-   + 设置内存
+   - 设置内存
 
      ```shell
      VBoxManage modifyvm "My_VM" --memory 1024
      ```
 
-   + 设置 CPU 数量
+   - 设置 CPU 数量
 
      ```shell
      VBoxManage modifyvm "My_VM" --cpus 1
      ```
 
-   + 更改虚拟机启动时的引导顺序（Boot Order）
+   - 更改虚拟机启动时的引导顺序（Boot Order）
 
      ```shell
      VBoxManage modifyvm "My_VM" --boot1 disk --boot2 none --boot3 none --boot4 none
      ```
 
-   + 启用硬件时钟 UTC 时间模式
+   - 启用硬件时钟 UTC 时间模式
 
      ```shell
      VBoxManage modifyvm "My_VM" --rtcuseutc on
      ```
 
-   + 启用 EFI：
+   - 启用 EFI：
 
      ```shell
      VBoxManage modifyvm "My_VM" --firmware efi
      ```
 
-   + 配置虚拟机的 HID（Human Interface Device）：
+   - 配置虚拟机的 HID（Human Interface Device）：
 
      ```shell
      VBoxManage modifyvm "My_VM" --mouse usbtablet
      ```
 
-   + 改显存为 32MB: 
+   - 改显存为 32MB:
 
      ```shell
      VBoxManage modifyvm "My_VM" --vram 32
      ```
 
-   + 启动网卡1，启用网络连接，连接方式：NAT  
+   - 启动网卡 1，启用网络连接，连接方式：NAT
 
      ```shell
      VBoxManage modifyvm "My_VM" --nic1 nat
      ```
 
-   + 启用 USB 控制器，USB 2.0 
+   - 启用 USB 控制器，USB 2.0
 
      ```shell
      VBoxManage modifyvm "My_VM" --usb on
      VBoxManage modifyvm "My_VM" --usbehci on
      ```
 
-   + 关闭 PAE（Physical Address Extension）： 
+   - 关闭 PAE（Physical Address Extension）：
 
      ```shell
      VBoxManage modifyvm "My_VM" --pae off
      ```
 
-   + 启用长模式（Long Mode） 
+   - 启用长模式（Long Mode）
 
      ```shell
      VBoxManage modifyvm "My_VM" --longmode on
      ```
 
-   + 启用 X2APIC 支持： 
+   - 启用 X2APIC 支持：
 
      ```shell
      VBoxManage modifyvm "My_VM" --x2apic on
      ```
 
-   + 启用硬件虚拟化大页面（Hardware Virtualization Large Pages）支持： 
+   - 启用硬件虚拟化大页面（Hardware Virtualization Large Pages）支持：
 
      ```shell
      VBoxManage modifyvm "My_VM" --largepages on
@@ -195,5 +190,3 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
    ```shell
    VBoxManage export "My_VM" --output /path/to/output_file.ova
    ```
-
-   

@@ -9,12 +9,12 @@ This project aims to automate the generation of XUbuntu, which will be used as a
 ```shell
 sudo modprobe nbd
 docker build -t local/101strap .
-docker run -it --privileged --rm -v $(pwd):/srv:ro -v ~/tmp/101:/target -v /usr/lib/ovftool:/Ovftool -v /dev:/dev -e NBD=/dev/nbd0 local/101strap:latest
+docker run -it --privileged --rm -v $(pwd):/srv:ro -v ~/tmp/101:/target -v /usr/lib/ovftool:/Ovftool:ro -v /dev:/dev -e NBD=/dev/nbd0 local/101strap:latest
 ```
 
 **Note:**
 
-+ The generation order for this project is: **qcow2 -> vmdk/vdi -> ova**. All of the processes are **automated**, and all you need to do is to run the three commands mentioned. However, before that, you need to install the [ovftool](https://developer.vmware.com/web/tool/4.4.0/ovf). Please note that this project generates **XUbuntu 22.04**, and if you wish to generate other versions of XUbuntu, you need to modify some content in the scripts.
++ The generation order for this project is: **qcow2 -> vmdk/vdi -> ova**. All of the processes are **automated**, and all you need to do is to run the three commands mentioned. However, before that, you need to install the ["OVF Tool Zip archive for Linux 64-bit"](https://developer.vmware.com/web/tool/4.4.0/ovf) from VMware. Please note that this project generates **XUbuntu 22.04**, and if you wish to generate other versions of XUbuntu, you need to modify some content in the scripts.
 
 + If there is any problems exporting to the ova file, you can also choose to manually export it using vmdk/vdi. You need to import the VMDK into VMware Workstation and configure it accordingly, import the VDI into VirtualBox and configure it accordingly, and then export each as an OVA.
 
