@@ -115,8 +115,10 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
    - 设置 CPU 数量
 
      ```shell
-     VBoxManage modifyvm "My_VM" --cpus 1
+     VBoxManage modifyvm "My_VM" --cpus 2
      ```
+
+     注意：VirtualBox 运行单个 CPU 的虚拟机时可能会导致 kernel panic: "Attempted to kill the idle task"。参见 <https://www.virtualbox.org/ticket/10686>。
 
    - 更改虚拟机启动时的引导顺序（Boot Order）
 
