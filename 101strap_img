@@ -73,26 +73,27 @@ mount -o defaults,discard "$ROOTPART" "$ROOT"
 mkdir -p "$EFI"
 mount "$EFIPART" "$EFI"
 
-debootstrap jammy "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
+debootstrap noble "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
 mount proc "$ROOT/proc" -t proc
 mount sysfs "$ROOT/sys" -t sysfs
 
 echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
-deb https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy main restricted universe multiverse
-deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
-deb https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ jammy-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
+deb https://mirrors.ustc.edu.cn/ubuntu/ noble main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
+deb https://mirrors.ustc.edu.cn/ubuntu/ noble-security main restricted universe multiverse
+#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
 chdo apt update
 chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
 # Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
+# Note: xfce4-statusnotifier is no longer needed.
 inspkg desktop-base xubuntu-core vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
-    virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-statusnotifier-plugin xfce4-whiskermenu-plugin mugshot \
+    virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
-    mate-calc mousepad epiphany-browser eog file-roller baobab evince synaptic \
+    mate-calc mousepad chromium eog file-roller baobab evince synaptic \
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
     iputils-ping netplan.io
 

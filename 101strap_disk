@@ -34,13 +34,13 @@ pciBridge7.virtualDev = \"pcieRootPort\"
 pciBridge7.functions = \"8\"
 vmci0.present = \"TRUE\"
 hpet0.present = \"TRUE\"
-nvram = \"VMware-Xubuntu-22.04-amd64.nvram\"
+nvram = \"VMware-Xubuntu-24.04-amd64.nvram\"
 virtualHW.productCompatibility = \"hosted\"
 powerType.powerOff = \"soft\"
 powerType.powerOn = \"soft\"
 powerType.suspend = \"soft\"
 powerType.reset = \"soft\"
-displayName = \"VMware-Xubuntu-22.04-amd64\"
+displayName = \"VMware-Xubuntu-24.04-amd64\"
 usb.vbluetooth.startConnected = \"TRUE\"
 guestOS = \"ubuntu-64\"
 tools.syncTime = \"FALSE\"
@@ -61,7 +61,7 @@ ethernet0.connectionType = \"nat\"
 ethernet0.addressType = \"generated\"
 ethernet0.virtualDev = \"e1000\"
 ethernet0.present = \"TRUE\"
-extendedConfigFile = \"VMware-Xubuntu-22.04-amd64.vmxf\"
+extendedConfigFile = \"VMware-Xubuntu-24.04-amd64.vmxf\"
 floppy0.present = \"FALSE\"
 firmware = \"efi\"
 uuid.bios = \"56 4d d6 24 f9 04 d5 18-04 9e 9d d2 ab b7 54 53\"
@@ -113,27 +113,27 @@ usb:1.deviceType = \"hub\"
 usb:1.port = \"1\"
 usb:1.parent = \"-1\"
 svga.guestBackedPrimaryAware = \"TRUE\"
-guestOS.detailed.data = \"architecture='X86' bitness='64' distroName='Ubuntu 22.04.2 LTS' distroVersion='22.04' familyName='Linux' kernelVersion='5.15.0-67-generic' prettyName='Ubuntu 22.04.2 LTS'\"
+guestOS.detailed.data = \"architecture='X86' bitness='64' distroName='Ubuntu 24.04 LTS' distroVersion='24.04' familyName='Linux' prettyName='Ubuntu 24.04 LTS'\"
 usb:0.present = \"TRUE\"
 usb:0.deviceType = \"hid\"
 usb:0.port = \"0\"
-usb:0.parent = \"-1\"" > "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.vmx
+usb:0.parent = \"-1\"" > "$WORKSPACE"/VMware-Xubuntu-24.04-amd64.vmx
 
 # Vmware: export ova
-/Ovftool/ovftool "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.vmx "$WORKSPACE"/VMware-Xubuntu-22.04-amd64.ova
+/Ovftool/ovftool "$WORKSPACE"/VMware-Xubuntu-24.04-amd64.vmx "$WORKSPACE"/VMware-Xubuntu-24.04-amd64.ova
 
 # VirtualBox: config
-VBoxManage createvm --name "VirtualBox-Xubuntu-22.04-amd64" --ostype "Ubuntu_64" --register
-VBoxManage storagectl "VirtualBox-Xubuntu-22.04-amd64" --name "SATA Controller" --add sata --controller IntelAHCI
-VBoxManage storageattach "VirtualBox-Xubuntu-22.04-amd64" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "$WORKSPACE"/root.vdi
-VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --memory 1024 --cpus 2
-VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --boot1 disk --boot2 none --boot3 none --boot4 none --rtcuseutc on --firmware efi
-VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --mouse usbtablet --vram 32 --usb on --usbehci on
-VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --nic1 nat
-VBoxManage modifyvm "VirtualBox-Xubuntu-22.04-amd64" --pae off --longmode on --x2apic on --largepages on
+VBoxManage createvm --name "VirtualBox-Xubuntu-24.04-amd64" --ostype "Ubuntu_64" --register
+VBoxManage storagectl "VirtualBox-Xubuntu-24.04-amd64" --name "SATA Controller" --add sata --controller IntelAHCI
+VBoxManage storageattach "VirtualBox-Xubuntu-24.04-amd64" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "$WORKSPACE"/root.vdi
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --memory 1024 --cpus 2
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --boot1 disk --boot2 none --boot3 none --boot4 none --rtcuseutc on --firmware efi
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --mouse usbtablet --vram 32 --usb on --usbehci on
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --nic1 nat
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --pae off --longmode on --x2apic on --largepages on
 
 # VirtualBox: export ova
-VBoxManage export "VirtualBox-Xubuntu-22.04-amd64" --output "$WORKSPACE"/VirtualBox-Xubuntu-22.04-amd64.ova
+VBoxManage export "VirtualBox-Xubuntu-24.04-amd64" --output "$WORKSPACE"/VirtualBox-Xubuntu-24.04-amd64.ova
 
 # Update permission
 chmod 644 "$WORKSPACE"/*.ova
