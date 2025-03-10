@@ -97,17 +97,6 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
     iputils-ping netplan.io wget gdb
 
-# dep of chromium
-inspkg fonts-liberation
-
-# Install chromium as default browser
-chdo wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-chdo dpkg -i google-chrome-stable_current_amd64.deb | true
-chdo apt-get -f install
-chdo dpkg -i google-chrome-stable_current_amd64.deb
-# .deb already contains alternative update
-# chdo update-alternatives --set x-www-browser /usr/bin/chromium
-
 # Update command-not-found database and upgrade packages
 chdo apt update
 chdo apt upgrade -y
