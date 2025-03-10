@@ -126,7 +126,7 @@ usb:0.parent = \"-1\"" > "$WORKSPACE"/VMware-Xubuntu-24.04-amd64.vmx
 VBoxManage createvm --name "VirtualBox-Xubuntu-24.04-amd64" --ostype "Ubuntu_64" --register
 VBoxManage storagectl "VirtualBox-Xubuntu-24.04-amd64" --name "SATA Controller" --add sata --controller IntelAHCI
 VBoxManage storageattach "VirtualBox-Xubuntu-24.04-amd64" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "$WORKSPACE"/root.vdi
-VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --memory 1024 --cpus 2
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --memory 2048 --cpus 2
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --boot1 disk --boot2 none --boot3 none --boot4 none --rtcuseutc on --firmware efi
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --mouse usbtablet --vram 32 --usb on --usbehci on
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --nic1 nat
