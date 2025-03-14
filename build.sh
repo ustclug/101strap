@@ -1,3 +1,5 @@
+#!/bin/bash
+
 sudo modprobe -r nbd
 sudo modprobe nbd
 sudo rm -rf ./build101

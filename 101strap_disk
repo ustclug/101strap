@@ -131,6 +131,10 @@ VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --boot1 disk --boot2 none -
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --mouse usbtablet --vram 32 --usb on --usbehci on
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --nic1 nat
 VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --pae off --longmode on --x2apic on --largepages on
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --graphicscontroller vmsvga
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --vram 128
+VBoxManage modifyvm "VirtualBox-Xubuntu-24.04-amd64" --accelerate3d on
+
 
 # VirtualBox: export ova
 VBoxManage export "VirtualBox-Xubuntu-24.04-amd64" --output "$WORKSPACE"/VirtualBox-Xubuntu-24.04-amd64.ova
