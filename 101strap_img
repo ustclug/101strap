@@ -98,7 +98,7 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
     mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
-    iputils-ping netplan.io wget gdb
+    iputils-ping netplan.io wget gdb git flatpak
 
 # Update command-not-found database and upgrade packages
 chdo apt update
@@ -180,6 +180,10 @@ chdo grub-install --target=x86_64-efi "$NBD" --no-nvram
 # Let grub show menu for convenience of debugging
 sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default/grub"
 sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
+
+# Show kernal messages at startup, instead of XUbuntu logo
+chdo sed -i 's/quiet//g; s/splash//g; s/  / /g; s/="\s/="/g; s/\s"/"/g' /etc/default/grub
+
 chdo update-grub
 
 # Cleanup
