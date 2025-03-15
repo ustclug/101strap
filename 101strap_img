@@ -90,7 +90,6 @@ deb https://mirrors.ustc.edu.cn/ubuntu/ noble-security main restricted universe 
 chdo apt update
 chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
-# Install desktop apps. TODO: replace epiphany-browser to non-snap firefox
 # Note: xfce4-statusnotifier is no longer needed.
 inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
     virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
@@ -98,7 +97,8 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
     mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
-    iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk
+    iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk \
+    gnome-software gnome-software-plugin-flatpak libgles2
 
 # Update command-not-found database and upgrade packages
 chdo apt update
@@ -134,9 +134,6 @@ mkdir -p "$ROOT/etc/skel/Desktop" "$ROOT/etc/skel/Downloads" "$ROOT/etc/skel/Tem
  "$ROOT/etc/skel/Pictures" "$ROOT/etc/skel/Videos"
 
 chdo echo "---- Install web browser ---"
-
-# chdo apt install -y chromium
-# chdo apt install firefox
 
 chdo install -d -m 0755 /etc/apt/keyrings
 chdo wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | chdo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
