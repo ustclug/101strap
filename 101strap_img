@@ -98,7 +98,7 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
     language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
     mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
     adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
-    iputils-ping netplan.io wget gdb git flatpak
+    iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk
 
 # Update command-not-found database and upgrade packages
 chdo apt update
