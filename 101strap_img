@@ -104,6 +104,16 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
 chdo apt update
 chdo apt upgrade -y
 
+# Use mirrored flatpak remote.
+chdo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
+chdo flatpak update
+
+# Set user dirs to english
+chdo env LC_ALL=C.UTF-8 LANG=C.UTF-8 LANGUAGE=C.UTF-8 xdg-user-dirs-update --force
+# 登录后不弹出重命名提示
+chdo rm ~/.config/user-dirs.locale
+
 chdo echo "---- Install web browser ---"
 
 # chdo apt install -y chromium
