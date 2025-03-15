@@ -111,7 +111,7 @@ chdo flatpak update
 
 # Set xdg-user-dirs to English
 mkdir -p "$ROOT/etc/skel/.config"
-cat <<EOF
+cat <<EOF > "$ROOT/etc/skel/.config/user-dirs.defaults"
 # This file is written by xdg-user-dirs-update
 # If you want to change or add directories, just edit the line you're
 # interested in. All local changes will be retained on the next run.
@@ -127,7 +127,7 @@ XDG_DOCUMENTS_DIR="$HOME/Documents"
 XDG_MUSIC_DIR="$HOME/Music"
 XDG_PICTURES_DIR="$HOME/Pictures"
 XDG_VIDEOS_DIR="$HOME/Videos"
-EOF > "$ROOT/etc/skel/.config/user-dirs.defaults"
+EOF
 echo "zh_CN" > "$ROOT/etc/skel/.config/user-dirs.locale"
 mkdir -p "$ROOT/etc/skel/Desktop" "$ROOT/etc/skel/Downloads" "$ROOT/etc/skel/Templates" \
  "$ROOT/etc/skel/Public" "$ROOT/etc/skel/Documents" "$ROOT/etc/skel/Music" \
