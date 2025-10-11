@@ -100,7 +100,7 @@ export QT_SCALE_FACTOR=1
 export XCURSOR_SIZE={int(scale * 24)}
 export GDK_SCALE=1
 """)
-    os.environ["QT_SCALE_FACTOR"] = str(scale)
+    os.environ["QT_SCALE_FACTOR"] = "1"
     os.environ["XCURSOR_SIZE"] = str(int(scale * 24))
     os.environ["GDK_SCALE"] = "1"
     if scale < 2:
