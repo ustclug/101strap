@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified from https://gitlab.com/kalilinux/packages/kali-hidpi-mode
+
+import os
+import subprocess
+import sys
+import argparse
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
+
+# Keep same folder name as kali-hidpi-mode for compatibility
+SETTINGS_DIR = os.path.expanduser("~/.config/kali-HiDPI")
+SCALE_FILE = os.path.join(SETTINGS_DIR, "scale-factor")
+XSESSION_SETTINGS = os.path.join(SETTINGS_DIR, "xsession-settings")
+
+if os.environ.get("XDG_CURRENT_DESKTOP") != "XFCE":
+    print("ERROR: HiDPI mode only works on Xfce desktop", file=sys.stderr)
+    subprocess.run(
+        [
+            "notify-send",
+            "-i",
+            "dialog-warning",
+            "ERROR: HiDPI mode only works on Xfce desktop",
+        ]
+    )
+    exit(1)
+
+os.makedirs(SETTINGS_DIR, exist_ok=True)
+xsessionrc_file = os.path.expanduser("~/.xsessionrc")
+if not (
+    os.path.exists(xsessionrc_file)
+    and any(f"{SETTINGS_DIR}" in line.strip() for line in open(xsessionrc_file))
+):
+    with open(xsessionrc_file, "a") as f:
+        f.write(f"[ -r {XSESSION_SETTINGS} ] && . {XSESSION_SETTINGS}\n")
+
+
+def enable_hidpi_int(scale: int):
+    with open(XSESSION_SETTINGS, "w") as f:
+        f.write(f"""
+export QT_SCALE_FACTOR={scale}
+export XCURSOR_SIZE={scale * 24}
+export GDK_SCALE={scale}
+""")
+    os.environ["QT_SCALE_FACTOR"] = str(scale)
+    os.environ["XCURSOR_SIZE"] = str(scale * 24)
+    os.environ["GDK_SCALE"] = str(scale)
+    if scale == 2:
+        theme = "Default-hdpi"
+    else:
+        theme = "Default-xhdpi"
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xfwm4",
+            "-p",
+            "/general/theme",
+            "-s",
+            theme,
+        ]
+    )
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xsettings",
+            "-p",
+            "/Gdk/WindowScalingFactor",
+            "-n",
+            "-t",
+            "int",
+            "-s",
+            str(scale),
+        ]
+    )
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xsettings",
+            "-p",
+            "/Xft/DPI",
+            "-n",
+            "-t",
+            "int",
+            "-s",
+            "96",
+        ]
+    )
+
+
+def enable_hidpi_fractional(scale: float):
+    with open(XSESSION_SETTINGS, "w") as f:
+        f.write(f"""
+export QT_SCALE_FACTOR=1
+export XCURSOR_SIZE={int(scale * 24)}
+export GDK_SCALE=1
+""")
+    os.environ["QT_SCALE_FACTOR"] = str(scale)
+    os.environ["XCURSOR_SIZE"] = str(int(scale * 24))
+    os.environ["GDK_SCALE"] = "1"
+    if scale < 2:
+        theme = "Default-hdpi"
+    else:
+        theme = "Default-xhdpi"
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xfwm4",
+            "-p",
+            "/general/theme",
+            "-s",
+            theme,
+        ]
+    )
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xsettings",
+            "-p",
+            "/Gdk/WindowScalingFactor",
+            "-n",
+            "-t",
+            "int",
+            "-s",
+            "1",
+        ]
+    )
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xsettings",
+            "-p",
+            "/Xft/DPI",
+            "-n",
+            "-t",
+            "int",
+            "-s",
+            str(int(scale * 96)),
+        ]
+    )
+
+
+def enable_hidpi(scale: float):
+    if scale.is_integer():
+        enable_hidpi_int(int(scale))
+    else:
+        enable_hidpi_fractional(scale)
+
+
+def disable_hidpi():
+    os.environ["QT_SCALE_FACTOR"] = "1"
+    os.environ["XCURSOR_SIZE"] = ""
+    os.environ["GDK_SCALE"] = "1"
+    try:
+        os.remove(XSESSION_SETTINGS)
+    except FileNotFoundError:
+        pass
+    subprocess.run(
+        ["xfconf-query", "-c", "xfwm4", "-p", "/general/theme", "-s", "Default"]
+    )
+    subprocess.run(
+        ["xfconf-query", "-c", "xsettings", "-p", "/Gdk/WindowScalingFactor", "-s", "1"]
+    )
+    subprocess.run(
+        [
+            "xfconf-query",
+            "-c",
+            "xsettings",
+            "-p",
+            "/Xft/DPI",
+            "-n",
+            "-t",
+            "int",
+            "-s",
+            "96",
+        ]
+    )
+
+
+def ask_confirmation(original_scale: float):
+    def on_response(dialog, response_id):
+        dialog.hide()
+        Gtk.main_quit()
+        if response_id == Gtk.ResponseType.NO:
+            toggle_hidpi(original_scale)
+
+    dialog = Gtk.MessageDialog(
+        parent=None,
+        flags=0,
+        message_type=Gtk.MessageType.QUESTION,
+        buttons=Gtk.ButtonsType.YES_NO,
+        text="Do you want to keep this window-scaling mode?",
+    )
+    dialog.set_title("HiDPI mode")
+    dialog.set_modal(True)
+    dialog.connect("response", on_response)
+    dialog.show_all()
+    Gtk.main()
+
+
+def toggle_hidpi(scale: float):
+    notify_message = ""
+    if os.path.isfile(SCALE_FILE):
+        current_scale = float(open(SCALE_FILE).read().strip())
+    else:
+        current_scale = 1
+    if (os.path.isfile(XSESSION_SETTINGS) and current_scale == scale) or scale == 1:
+        print("Disabling HiDPI mode")
+        disable_hidpi()
+        if os.path.isfile(SCALE_FILE):
+            os.remove(SCALE_FILE)
+        notify_message = "HiDPI mode disabled"
+    else:
+        print(f"Enabling HiDPI mode with scale factor {scale}")
+        enable_hidpi(scale)
+        with open(SCALE_FILE, "w") as f:
+            f.write(str(scale))
+        notify_message = f"HiDPI mode enabled {scale}x"
+
+    subprocess.run(["pkill", "xfce4-notifyd"])
+    subprocess.run(["pkill", "xfsettingsd"])
+    subprocess.Popen(["xfsettingsd"])
+    subprocess.run(["xfce4-panel", "-q"])
+    subprocess.Popen(["xfce4-panel"])
+    subprocess.run(["xfdesktop", "-Q"])
+    subprocess.Popen(["xfdesktop"])
+    subprocess.Popen(["notify-send", "-i", "dialog-information", notify_message])
+    ask_confirmation(current_scale)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Toggle HiDPI mode for Xfce")
+    parser.add_argument(
+        "scale",
+        type=float,
+        nargs="?",
+        default=2,
+        help="Scale factor (>= 1). When set to 1 or same as current, HiDPI mode will be disabled",
+    )
+    args = parser.parse_args()
+    if args.scale < 1:
+        print("Scale factor must be >= 1", file=sys.stderr)
+        exit(1)
+    if not args.scale.is_integer():
+        if args.scale > 2:
+            # OK, we are not going to support fractional scale factor > 2
+            # I have never seen such a screen that requires this kind of scale factor
+            print("Unsupported fractional scale factor > 2", file=sys.stderr)
+            exit(1)
+        print(
+            "WARNING: Fractional scale factor might not perform so well, compared with integer scale factor",
+            file=sys.stderr,
+        )
+    toggle_hidpi(args.scale)
