@@ -104,10 +104,17 @@ inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xo
 chdo apt update
 chdo apt upgrade -y
 
+chdo echo "---- Install kali-HiDPI for high resolution display ----"
+chdo wget https://gitlab.com/kalilinux/packages/kali-hidpi-mode/-/raw/kali/master/kali-hidpi-mode?ref_type=heads -O /usr/local/bin/kali-hidpi-mode
+chdo chmod +x /usr/local/bin/kali-hidpi-mode
+chdo ln -s /usr/local/bin/kali-hidpi-mode /usr/local/bin/toggle-hidpi
+
 # Use mirrored flatpak remote.
 chdo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
 chdo flatpak update
+
+chdo echo "flatpak is OK."
 
 # Set xdg-user-dirs to English
 mkdir -p "$ROOT/etc/skel/.config"
