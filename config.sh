@@ -1,35 +1,15 @@
 #!/bin/bash
-# Variables are consumed by the scripts sourcing this file.
+# shellcheck source=rootfs/config.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/rootfs/config.sh"
 # shellcheck disable=SC2034
-
-# Shared by the host wrapper and the container entry points.
-RELEASE=26.04
-SUITE=resolute
 DISK_SIZE_MIB=16384
+# shellcheck disable=SC2034
 ESP_SIZE_MIB=256
-# Use one complete repository for Firefox and its architecture-independent l10n packages.
-MOZILLA_MIRROR=https://packages.mozilla.org/apt
-BUILD_MIRROR_MODE=${BUILD_MIRROR_MODE:-ustc}
-case "$BUILD_MIRROR_MODE" in
-    ustc|upstream) ;;
-    *) echo "Unsupported BUILD_MIRROR_MODE: $BUILD_MIRROR_MODE (expected ustc or upstream)" >&2; exit 1 ;;
-esac
-ARCH=${ARCH:-amd64}
-case "$ARCH" in
-    amd64)
-        UBUNTU_MIRROR=https://mirrors.ustc.edu.cn/ubuntu
-        GRUB_TARGET=x86_64-efi
-        GRUB_PACKAGE=grub-efi-amd64
-        FORMAT=${FORMAT:-all}
-        ;;
-    arm64)
-        UBUNTU_MIRROR=https://mirrors.ustc.edu.cn/ubuntu-ports
-        GRUB_TARGET=arm64-efi
-        GRUB_PACKAGE=grub-efi-arm64
-        FORMAT=${FORMAT:-qcow2}
-        ;;
-    *) echo "Unsupported ARCH: $ARCH (expected amd64 or arm64)" >&2; exit 1 ;;
-esac
+if [[ "$ARCH" == amd64 ]]; then
+    FORMAT=${FORMAT:-all}
+else
+    FORMAT=${FORMAT:-qcow2}
+fi
 case "$FORMAT" in
     all|qcow2) ;;
     *) echo "Unsupported FORMAT: $FORMAT (expected all or qcow2)" >&2; exit 1 ;;
@@ -39,30 +19,8 @@ if [[ "$ARCH" == arm64 && "$FORMAT" != qcow2 ]]; then
     exit 1
 fi
 
-DELIVERY_UBUNTU_MIRROR=$UBUNTU_MIRROR
-if [[ "$BUILD_MIRROR_MODE" == upstream ]]; then
-    case "$ARCH" in
-        amd64) UBUNTU_MIRROR=https://archive.ubuntu.com/ubuntu ;;
-        arm64) UBUNTU_MIRROR=https://ports.ubuntu.com/ubuntu-ports ;;
-    esac
+CACHE_EPOCH=${CACHE_EPOCH:-0}
+if [[ ! "$CACHE_EPOCH" =~ ^[a-zA-Z0-9._-]{1,64}$ ]]; then
+    echo 'CACHE_EPOCH must be 1-64 letters, digits, dots, underscores or hyphens' >&2
+    exit 1
 fi
-UBUNTU_SECURITY_MIRROR=$UBUNTU_MIRROR
-if [[ "$BUILD_MIRROR_MODE:$ARCH" == upstream:amd64 ]]; then
-    UBUNTU_SECURITY_MIRROR=https://security.ubuntu.com/ubuntu
-fi
-
-write_ubuntu_sources() {
-    cat <<EOF
-Types: deb
-URIs: $1
-Suites: $SUITE $SUITE-updates
-Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-
-Types: deb
-URIs: $2
-Suites: $SUITE-security
-Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-EOF
-}

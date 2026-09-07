@@ -47,18 +47,8 @@ privilege=()
 if (( EUID != 0 )); then
     privilege=(sudo)
 fi
-# Loading an already loaded module is harmless; never unload other users' NBDs.
-"${privilege[@]}" modprobe nbd max_part=16
-if [[ ! -b "$NBD" ]]; then
-    echo "NBD is not a block device: $NBD" >&2
-    exit 1
-fi
-if [[ -s "/sys/class/block/${NBD##*/}/pid" ]]; then
-    echo "NBD is already connected: $NBD" >&2
-    exit 1
-fi
 
-stage=image
+stage=configured
 volumes=()
 if [[ "$FORMAT" == all ]]; then
     stage=exporter
@@ -74,7 +64,20 @@ if command -v git >/dev/null && git rev-parse --verify HEAD >/dev/null 2>&1; the
         SOURCE_DIRTY=true
     fi
 fi
-"${privilege[@]}" "$CONTAINER_ENGINE" build --build-arg "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" --target "$stage" -t "local/101strap:$stage" .
+export ARCH BUILD_MIRROR_MODE CACHE_EPOCH
+python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" --tag "local/101strap:$stage"
+ROOTFS_IMAGE_ID=$("${privilege[@]}" "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
+# Loading an already loaded module is harmless; never unload other users' NBDs.
+"${privilege[@]}" modprobe nbd max_part=16
+if [[ ! -b "$NBD" ]]; then
+    echo "NBD is not a block device: $NBD" >&2
+    exit 1
+fi
+if [[ -s "/sys/class/block/${NBD##*/}/pid" ]]; then
+    echo "NBD is already connected: $NBD" >&2
+    exit 1
+fi
+
 container_options=()
 if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
     container_options+=(--name "$BUILD_CONTAINER_NAME")
@@ -86,5 +89,5 @@ fi
     -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" -v /dev:/dev \
     "${volumes[@]}" "${emulation_volumes[@]}" \
     -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
-    -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
-    "local/101strap:$stage"
+    -e "ROOTFS_IMAGE_ID=$ROOTFS_IMAGE_ID" -e "CACHE_EPOCH=$CACHE_EPOCH" -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
+    "$ROOTFS_IMAGE_ID"

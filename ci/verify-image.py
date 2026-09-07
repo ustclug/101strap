@@ -21,12 +21,16 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
         "build-info": "/usr/share/101strap/build-info.txt",
     }
     commands = [f'download {guest} "{root / name}"' for name, guest in files.items()]
-    commands += ["readlink /var/lib/dbus/machine-id", "exists /var/lib/systemd/random-seed"]
+    efi = "BOOTX64.EFI" if arch == "amd64" else "BOOTAA64.EFI"
+    commands += ["readlink /var/lib/dbus/machine-id", "exists /var/lib/systemd/random-seed",
+                 f"is-file /boot/efi/EFI/BOOT/{efi}", "is-file /usr/share/man/man2/open.2.gz",
+                 "exists /recipe", "exists /rootfs-build", "exists /usr/sbin/policy-rc.d",
+                 "readlink /etc/resolv.conf", "is-file /boot/grub/grub.cfg"]
     result = subprocess.check_output(
-        ["guestfish", "--ro", "-a", image, "-m", "/dev/sda2"],
+        ["guestfish", "--ro", "-a", image, "-m", "/dev/sda2", "-m", "/dev/sda1:/boot/efi"],
         input="\n".join(commands) + "\n", text=True,
     )
-    assert result.splitlines() == ["/etc/machine-id", "false"], result
+    assert result.splitlines() == ["/etc/machine-id", "false", "true", "true", "false", "false", "false", "/run/systemd/resolve/stub-resolv.conf", "true"], result
     assert (root / "machine-id").read_bytes() == b""
     assert 'VERSION_ID="26.04"' in (root / "release").read_text()
     sources = (root / "sources").read_text()
@@ -36,6 +40,8 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
     metadata = (root / "build-info").read_text()
     assert f"architecture={arch}\n" in metadata
     assert "build_mirror_mode=upstream\n" in metadata
+    assert "rootfs_image_id=sha256:" in metadata
+    assert "cache_epoch=" in metadata
     accounts = [line.split(":") for line in (root / "shadow").read_text().splitlines()]
     user = next(row for row in accounts if row[0] == "ustc")
     assert user[2] == "0" and user[1].startswith("$")

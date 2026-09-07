@@ -1,0 +1,29 @@
+@TOOLS@
+
+FROM image AS bootstrap
+ARG ARCH=amd64
+ARG CACHE_EPOCH=0
+ARG BUILD_MIRROR_MODE=ustc
+COPY rootfs/config.sh rootfs/run-stage.sh /recipe/
+COPY rootfs/bootstrap.sh /recipe/
+@RUN@ bash /recipe/run-stage.sh bootstrap
+
+FROM bootstrap AS desktop
+COPY rootfs/desktop.sh /recipe/
+@RUN@ bash /recipe/run-stage.sh desktop
+
+FROM desktop AS applications
+COPY rootfs/applications.sh /recipe/
+@RUN@ bash /recipe/run-stage.sh applications
+
+FROM applications AS kernel
+COPY rootfs/kernel.sh /recipe/
+@RUN@ bash /recipe/run-stage.sh kernel
+
+FROM kernel AS configured
+COPY rootfs/configured.sh /recipe/
+COPY assets/configure-panel.py assets/toggle-hidpi /recipe/assets/
+@RUN@ bash /recipe/run-stage.sh configured
+
+FROM configured AS exporter
+RUN apt-get update && apt-get install -y --no-install-recommends virtualbox && apt-get clean

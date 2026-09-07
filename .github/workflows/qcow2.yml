@@ -3,6 +3,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      cache_epoch:
+        description: Change this value to rebuild tools and guest packages
+        default: '0'
+        type: string
 permissions:
   contents: read
 jobs:
@@ -15,8 +20,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck parted
       - name: Syntax, ShellCheck and regression tests
         run: |
-          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
-          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh tests/*.sh ci/*.sh
+          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
+          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh
           python3 -m unittest discover -s tests -v
   build:
     if: github.event_name == 'workflow_dispatch'
@@ -33,6 +38,9 @@ jobs:
     timeout-minutes: 180
     env:
       ARCH: ${{ matrix.arch }}
+      CACHE_EPOCH: ${{ inputs.cache_epoch }}
+      CONTAINER_CACHE: gha
+      BUILDX_BUILDER: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
       BUILD_CONTAINER_NAME: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
       LIBGUESTFS_BACKEND: direct
     steps:
@@ -41,13 +49,22 @@ jobs:
           persist-credentials: false
       - name: Install verification tools
         run: sudo apt-get update && sudo apt-get install -y qemu-utils libguestfs-tools
+      - name: Expose temporary Actions cache credentials
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
       - name: Build and verify
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/101strap"
           bash ci/build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/job.log"
       - name: Sealing fixture in disposable Docker container
-        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:image /srv/tests/test_seal_container.sh
+        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:configured /srv/tests/test_seal_container.sh
+      - name: Rootfs metadata transfer fixture
+        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:configured /srv/tests/test_copy_container.sh
       - name: Upload verified image and metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
