@@ -1,13 +1,13 @@
 #!/bin/bash
 
-set -ex
+set -exo pipefail
+
+cd /srv
+# shellcheck source=config.sh
+source ./config.sh
 
 chdo() {
     chroot "$ROOT" "$@"
-}
-
-enserv() {
-    chroot "$ROOT" systemctl enable "$@"
 }
 
 inspkg() {
@@ -15,44 +15,82 @@ inspkg() {
 }
 
 cleanup() {
-    if [ -n "$DEBUG" ]; then
+    local status=$?
+    trap - EXIT
+    if [ -n "${DEBUG:-}" ]; then
         echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
         /bin/bash
     fi
-    umount "$EFI" || true
-    umount -R "$ROOT" || true
-    qemu-nbd -d "$NBD" || true
+    if [[ "$root_mounted" == yes ]] && ! umount -R "$ROOT"; then
+        echo "Unmount failed; leaving $NBD connected. Unmount $ROOT before disconnecting it." >&2
+        exit 1
+    fi
+    if [[ "$nbd_connected" == yes ]]; then
+        qemu-nbd -d "$NBD" || status=1
+    fi
+    exit "$status"
 }
-trap cleanup EXIT
 
 WORKSPACE="/target"
-USER="ustc"
+IMAGE_USER="ustc"
 PASSWORD="ustc"
+ROOT="/mnt/rootfs"
+EFI="$ROOT/boot/efi"
+root_mounted=no
+nbd_connected=no
 
+if [[ ! "${NBD:-}" =~ ^/dev/nbd[0-9]+$ ]]; then
+    echo "NBD must name a /dev/nbdN device: ${NBD:-unset}" >&2
+    exit 1
+fi
 if [ ! -d "$WORKSPACE" ]; then
     echo "$WORKSPACE is not a directory."
     exit 1
 elif [ "$(id -u)" -ne 0 ]; then
     echo "You are not root!"
     exit 1
-elif [ ! -b "$NBD" ]; then
-    echo "$NBD is not block device"
+elif [ ! -b "${NBD:-}" ]; then
+    echo "${NBD:-NBD} is not block device"
     exit 1
 fi
+if [[ -e "$WORKSPACE/root.qcow2" || -L "$WORKSPACE/root.qcow2" ]]; then
+    echo "Refusing to overwrite $WORKSPACE/root.qcow2" >&2
+    exit 1
+fi
+if [[ -s "/sys/class/block/${NBD##*/}/pid" ]] || mountpoint -q "$ROOT"; then
+    echo "NBD or rootfs mountpoint is already in use" >&2
+    exit 1
+fi
+HOST_ARCH=$(dpkg --print-architecture)
+if [[ "$HOST_ARCH" != "$ARCH" ]]; then
+    if [[ "$HOST_ARCH:$ARCH" != amd64:arm64 ]] ||
+       ! grep -q '^enabled$' /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null ||
+       ! grep -q '^flags:.*F' /proc/sys/fs/binfmt_misc/qemu-aarch64; then
+        echo "Cross-building requires the host qemu-aarch64 binfmt handler with the F flag." >&2
+        exit 1
+    fi
+fi
+trap cleanup EXIT
 
 # Create image file, EFI got 256M, and rootfs got remaining space
 qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 10G
 qemu-nbd -c "$NBD" --discard=unmap --detect-zeroes=unmap "$WORKSPACE"/root.qcow2
+nbd_connected=yes
 parted --script -a optimal "$NBD" mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
 
 # Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
 EFIPART="$NBD"p1
 ROOTPART="$NBD"p2
 
+# Partition nodes can appear asynchronously when the host handles udev events.
+for ((attempt = 0; attempt < 50; attempt++)); do
+    [[ -b "$EFIPART" && -b "$ROOTPART" ]] && break
+    sleep 0.1
+done
+
 # Sanity check. TODO: automatically calc the real partition size
 if [ "$(blockdev --getsize64 "$EFIPART")" != 254803968 ]; then
     echo "Sanity check failed: EFI size unexpected"
-    qemu-nbd -d "$NBD"
     exit 1
 fi
 
@@ -60,7 +98,6 @@ fi
 
 if [ "$(blockdev --getsize64 "$ROOTPART")" != 10480517120 ]; then
     echo "Sanity check failed: rootfs size unexpected"
-    qemu-nbd -d "$NBD"
     exit 1
 fi
 
@@ -69,36 +106,56 @@ mkfs.fat -nEFI -F32 "$EFIPART"
 mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
 
 # Mount EFI partition and rootfs
-EFI="/mnt/rootfs/boot/efi"
-ROOT="/mnt/rootfs"
 mkdir -p "$ROOT"
 mount -o defaults,discard "$ROOTPART" "$ROOT"
+root_mounted=yes
 mkdir -p "$EFI"
 mount "$EFIPART" "$EFI"
 
-debootstrap noble "$ROOT" http://mirrors.ustc.edu.cn/ubuntu/
+if [[ "$HOST_ARCH" == "$ARCH" ]]; then
+    debootstrap --arch="$ARCH" "$SUITE" "$ROOT" "$UBUNTU_MIRROR"
+else
+    debootstrap --arch="$ARCH" --foreign "$SUITE" "$ROOT" "$UBUNTU_MIRROR"
+    chdo /debootstrap/debootstrap --second-stage
+fi
 mount proc "$ROOT/proc" -t proc
 mount sysfs "$ROOT/sys" -t sysfs
 
-echo "# 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
-deb https://mirrors.ustc.edu.cn/ubuntu/ noble main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble main restricted universe multiverse
-deb https://mirrors.ustc.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
-deb https://mirrors.ustc.edu.cn/ubuntu/ noble-security main restricted universe multiverse
-#deb-src https://mirrors.ustc.edu.cn/ubuntu/ noble-security main restricted universe multiverse" > "$ROOT/etc/apt/sources.list"
+# Package installation must not start guest daemons against the host devices.
+cat > "$ROOT/usr/sbin/policy-rc.d" <<'EOF'
+#!/bin/sh
+exit 101
+EOF
+chmod +x "$ROOT/usr/sbin/policy-rc.d"
+
+rm -f "$ROOT/etc/apt/sources.list"
+cat > "$ROOT/etc/apt/sources.list.d/ubuntu.sources" <<EOF
+Types: deb
+URIs: $UBUNTU_MIRROR
+Suites: $SUITE $SUITE-updates $SUITE-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
 chdo apt update
 chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
 # Note: xfce4-statusnotifier is no longer needed.
-inspkg desktop-base xubuntu-core dpkg vim htop strace bash-completion xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl open-vm-tools open-vm-tools-desktop \
-    virtualbox-guest-x11 network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
+inspkg desktop-base xubuntu-desktop-minimal dpkg vim htop strace bash-completion \
+    network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
+    xfce4-pulseaudio-plugin pipewire-pulse pipewire-alsa wireplumber pavucontrol \
     software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
-    language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 \
+    language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 fcitx5-frontend-qt6 \
     mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
-    adwaita-icon-theme-full command-not-found gparted policykit-1-gnome \
+    adwaita-icon-theme command-not-found gparted policykit-1-gnome \
     iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk \
     gnome-software gnome-software-plugin-flatpak libgles2 psmisc
+
+if [[ "$ARCH" == amd64 ]]; then
+    inspkg xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl \
+        open-vm-tools open-vm-tools-desktop virtualbox-guest-x11
+else
+    inspkg spice-vdagent
+fi
 
 # Update command-not-found database and upgrade packages
 chdo apt update
@@ -110,7 +167,7 @@ chmod +x "$ROOT/usr/local/bin/toggle-hidpi"
 # Use mirrored flatpak remote.
 chdo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
-chdo flatpak update
+chdo flatpak update -y
 
 chdo echo "flatpak is OK."
 
@@ -142,17 +199,19 @@ chdo echo "---- Install web browser ---"
 
 chdo install -d -m 0755 /etc/apt/keyrings
 chdo wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | chdo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
-chdo gpg -n -q --import --import-options import-show /etc/apt/keyrings/packages.mozilla.org.asc | chdo awk '/pub/{getline; gsub(/^ +| +$/,""); if($0 == "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3") print "\nThe key fingerprint matches ("$0").\n"; else print "\nVerification failed: the fingerprint ("$0") does not match the expected one.\n"}'
-# chdo echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | chdo tee -a /etc/apt/sources.list.d/mozilla.list > /dev/null
-chdo echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://mirrors.ustc.edu.cn/mozilla/apt mozilla main" | chdo tee -a /etc/apt/sources.list.d/mozilla.list > /dev/null
+MOZILLA_FINGERPRINT=$(chdo gpg --show-keys --with-colons /etc/apt/keyrings/packages.mozilla.org.asc | awk -F: '$1 == "fpr" && !found { print $10; found=1 }')
+if [[ "$MOZILLA_FINGERPRINT" != 35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3 ]]; then
+    echo "Mozilla signing key fingerprint mismatch: $MOZILLA_FINGERPRINT" >&2
+    exit 1
+fi
+chdo echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] $MOZILLA_MIRROR mozilla main" | chdo tee /etc/apt/sources.list.d/mozilla.list > /dev/null
 chdo echo '
 Package: *
 Pin: release a=mozilla
 Pin-Priority: 1000
 ' | chdo tee /etc/apt/preferences.d/mozilla
-chdo apt-get update && chdo apt-get install -y firefox
-
-chdo apt-get install -y firefox-l10n-zh-cn
+chdo apt-get -o APT::Update::Error-Mode=any update
+inspkg firefox firefox-l10n-zh-cn
 
 # Support trash bin
 
@@ -161,17 +220,23 @@ chdo apt install -y --no-install-recommends gvfs
 # Adjust xfce clock to display date in correct format
 # By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
 sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
+# The VM does not include Xfce's power manager; remove its default panel entry.
+chdo python3 - /etc/xdg/xdg-xubuntu/xfce4/panel/default.xml < /srv/assets/configure-panel.py
 # Remove "Mail reader"
 sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
 sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
-# Remove help (not working in epiphany, and taking space)
+# Remove the help shortcut to leave room for course applications.
 sed -i "s/,xfhelp4.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
-# Set default browser to debian default browser (here it is epiphany)
+# Use the system's default browser (Firefox).
 sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/helpers.rc"
 # Use default selection color in xfce4-terminal
 sed -i "/ColorSelectionUseDefault/d" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/terminal/terminalrc"
 
 # User and host configuration
+# Work around GTK's symbolic SVG parser ignoring group transforms in elementary-xfce.
+# Remove once fixed: https://github.com/shimmerproject/elementary-xfce/pull/541
+echo 'GDK_DISABLE=icon-nodes' >> "$ROOT/etc/environment"
+
 ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
 chdo dpkg-reconfigure --frontend noninteractive tzdata
 
@@ -182,9 +247,12 @@ LC_ALL="zh_CN.UTF-8"' > "$ROOT/etc/default/locale"
 # /var/lib/locales/supported.d/zh-hans contains zh_CN.UTF-8
 chdo locale-gen
 
-chdo adduser --disabled-password --gecos "" "$USER"
-echo "$USER:$PASSWORD" | chdo chpasswd
-chdo adduser "$USER" sudo
+chdo adduser --disabled-password --gecos "" "$IMAGE_USER"
+echo "$IMAGE_USER:$PASSWORD" | chdo chpasswd
+# LightDM/PAM presents the password-change prompts before the first desktop login.
+# A successful password change clears this flag; console logins enforce it too.
+chdo chage --lastday 0 "$IMAGE_USER"
+chdo adduser "$IMAGE_USER" sudo
 
 echo "ustclug-linux101" > "$ROOT/etc/hostname"
 echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
@@ -203,11 +271,11 @@ echo "network:
 # so don't mount /dev inside chroot rootfs until last moment
 mount --rbind --make-rslave /dev "$ROOT/dev"
 # Install kernel and configure grub
-inspkg linux-image-virtual grub-efi initramfs-tools cloud-initramfs-growroot
+inspkg linux-image-virtual "$GRUB_PACKAGE" initramfs-tools cloud-initramfs-growroot
 # GRUB requires available initrd to use root=UUID=xxx
 chdo update-initramfs -k all -c
 # Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
-chdo grub-install --target=x86_64-efi "$NBD" --no-nvram
+chdo grub-install --target="$GRUB_TARGET" --efi-directory=/boot/efi --removable --no-nvram
 # Let grub show menu for convenience of debugging
 sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default/grub"
 sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
@@ -215,10 +283,18 @@ sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
 # Show kernal messages at startup, instead of XUbuntu logo
 chdo sed -i 's/quiet//g; s/splash//g; s/  / /g; s/="\s/="/g; s/\s"/"/g' /etc/default/grub
 
+if [[ "$ARCH" == arm64 ]]; then
+    # Keep graphical output while exposing boot diagnostics and a serial login.
+    # shellcheck disable=SC2016
+    echo 'GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX console=tty0 console=ttyAMA0,115200"' >> "$ROOT/etc/default/grub"
+fi
+
 chdo update-grub
 
 # Cleanup
-chdo apt autoremove -y && apt clean
+chdo apt autoremove -y
+chdo apt clean
+rm -f "$ROOT/usr/sbin/policy-rc.d"
 rm -rf "$ROOT/var/cache"/*
 
 # Trim filesystems

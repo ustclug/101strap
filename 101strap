@@ -2,5 +2,9 @@
 
 set -e
 
+# shellcheck source=config.sh
+source /srv/config.sh
 /bin/bash /srv/101strap_img
-/bin/bash /srv/101strap_disk
+if [[ "$FORMAT" == all ]]; then
+    /bin/bash /srv/101strap_disk
+fi
