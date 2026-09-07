@@ -36,6 +36,10 @@ Ubuntu packages use the USTC Ubuntu / Ubuntu Ports mirrors. Both architectures
 use Mozilla's official APT repository for Firefox and its Chinese language pack.
 Audio uses PipeWire with WirePlumber, the Xfce PulseAudio panel plugin, and
 `pavucontrol`. The power-manager plugin is omitted from the VM's default panel.
+Labwc and Xwayland are included for trying the experimental Xfce Wayland session;
+the default X11 session is unchanged. Select the Xfce Wayland session at login,
+or run `startxfce4 --wayland` from a TTY outside an existing desktop session
+([Xfce testing instructions](https://wiki.xfce.org/releng/wayland_roadmap)).
 The image sets `GDK_DISABLE=icon-nodes` globally in `/etc/environment` as a
 temporary workaround for missing elementary-xfce symbolic icons in GTK 4
 ([upstream fix](https://github.com/shimmerproject/elementary-xfce/pull/541)).
