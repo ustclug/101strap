@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run with the repository mounted read-only at /srv in a disposable container.
 set -euo pipefail
-test -f /run/.containerenv
+[[ -f /run/.containerenv || -f /.dockerenv ]]
 test "$(id -u)" = 0
 install -d /usr/share/101strap /var/lib/dbus /var/lib/systemd /var/lib/NetworkManager \
     /etc/ssh /home/seal-test /var/log/journal/old-machine

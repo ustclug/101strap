@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# ShellCheck 0.11 reports SC2218 here even though these functions are available;
+# chdo/inspkg and sourced helpers are defined before their first calls.
+# shellcheck disable=SC2218
 set -exo pipefail
 
 cd /srv
@@ -131,13 +134,7 @@ EOF
 chmod +x "$ROOT/usr/sbin/policy-rc.d"
 
 rm -f "$ROOT/etc/apt/sources.list"
-cat > "$ROOT/etc/apt/sources.list.d/ubuntu.sources" <<EOF
-Types: deb
-URIs: $UBUNTU_MIRROR
-Suites: $SUITE $SUITE-updates $SUITE-security
-Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-EOF
+write_ubuntu_sources "$UBUNTU_MIRROR" "$UBUNTU_SECURITY_MIRROR" > "$ROOT/etc/apt/sources.list.d/ubuntu.sources"
 chdo apt update
 chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
@@ -170,7 +167,9 @@ chmod +x "$ROOT/usr/local/bin/toggle-hidpi"
 
 # Use mirrored flatpak remote.
 chdo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
+if [[ "$BUILD_MIRROR_MODE" == ustc ]]; then
+    chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
+fi
 chdo flatpak update -y
 
 chdo echo "flatpak is OK."
@@ -295,6 +294,11 @@ fi
 
 chdo update-grub
 
+# Deliver the usual mirrors, including usable package-search indexes.
+write_ubuntu_sources "$DELIVERY_UBUNTU_MIRROR" "$DELIVERY_UBUNTU_MIRROR" > "$ROOT/etc/apt/sources.list.d/ubuntu.sources"
+chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
+chdo apt-get -o APT::Update::Error-Mode=any update
+
 # Cleanup
 chdo apt autoremove -y
 chdo apt clean
@@ -310,7 +314,8 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'release=%s\nsuite=%s\narchitecture=%s\ndisk_size_mib=%s\n' "$RELEASE" "$SUITE" "$ARCH" "$DISK_SIZE_MIB"
     printf 'built_at_utc=%s\nsource_commit=%s\nsource_dirty=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${SOURCE_COMMIT:-unknown}" "${SOURCE_DIRTY:-unknown}"
-    printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$UBUNTU_MIRROR" "$MOZILLA_MIRROR"
+    printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$DELIVERY_UBUNTU_MIRROR" "$MOZILLA_MIRROR"
+    printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR"
 } > "$WORKSPACE/build-info.txt"
 sha256sum 101strap 101strap_img 101strap_disk 101strap_checksums Dockerfile build.sh config.sh \
     assets/configure-panel.py assets/seal-image.sh assets/toggle-hidpi > "$WORKSPACE/build-sources.sha256"

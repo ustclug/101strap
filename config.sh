@@ -9,6 +9,11 @@ DISK_SIZE_MIB=16384
 ESP_SIZE_MIB=256
 # Use one complete repository for Firefox and its architecture-independent l10n packages.
 MOZILLA_MIRROR=https://packages.mozilla.org/apt
+BUILD_MIRROR_MODE=${BUILD_MIRROR_MODE:-ustc}
+case "$BUILD_MIRROR_MODE" in
+    ustc|upstream) ;;
+    *) echo "Unsupported BUILD_MIRROR_MODE: $BUILD_MIRROR_MODE (expected ustc or upstream)" >&2; exit 1 ;;
+esac
 ARCH=${ARCH:-amd64}
 case "$ARCH" in
     amd64)
@@ -33,3 +38,31 @@ if [[ "$ARCH" == arm64 && "$FORMAT" != qcow2 ]]; then
     echo "arm64 currently supports FORMAT=qcow2 only" >&2
     exit 1
 fi
+
+DELIVERY_UBUNTU_MIRROR=$UBUNTU_MIRROR
+if [[ "$BUILD_MIRROR_MODE" == upstream ]]; then
+    case "$ARCH" in
+        amd64) UBUNTU_MIRROR=https://archive.ubuntu.com/ubuntu ;;
+        arm64) UBUNTU_MIRROR=https://ports.ubuntu.com/ubuntu-ports ;;
+    esac
+fi
+UBUNTU_SECURITY_MIRROR=$UBUNTU_MIRROR
+if [[ "$BUILD_MIRROR_MODE:$ARCH" == upstream:amd64 ]]; then
+    UBUNTU_SECURITY_MIRROR=https://security.ubuntu.com/ubuntu
+fi
+
+write_ubuntu_sources() {
+    cat <<EOF
+Types: deb
+URIs: $1
+Suites: $SUITE $SUITE-updates
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: $2
+Suites: $SUITE-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+}
