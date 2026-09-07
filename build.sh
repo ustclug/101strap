@@ -65,9 +65,19 @@ if [[ "$FORMAT" == all ]]; then
     volumes=(-v "$OVFTOOL_PATH:/Ovftool:ro")
 fi
 mkdir -p -- "$OUTPUT_DIR"
+SOURCE_COMMIT=unknown
+SOURCE_DIRTY=unknown
+if command -v git >/dev/null && git rev-parse --verify HEAD >/dev/null 2>&1; then
+    SOURCE_COMMIT=$(git rev-parse HEAD)
+    SOURCE_DIRTY=false
+    if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+        SOURCE_DIRTY=true
+    fi
+fi
 "${privilege[@]}" "$CONTAINER_ENGINE" build --target "$stage" -t "local/101strap:$stage" .
 "${privilege[@]}" "$CONTAINER_ENGINE" run --privileged --rm \
     -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" -v /dev:/dev \
     "${volumes[@]}" "${emulation_volumes[@]}" \
     -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
+    -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
     "local/101strap:$stage"

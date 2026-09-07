@@ -24,7 +24,7 @@ ARCH=arm64 ./build.sh
 
 Outputs are in `build101/amd64/` and `build101/arm64/`, with `root.qcow2`
 in each directory. A nonempty output directory is rejected: move the previous
-build aside before retrying. The disk has a 10 GiB virtual capacity and uses
+build aside before retrying. The disk has a sparse 16 GiB virtual capacity and uses
 UEFI without Secure Boot. The username and initial password are both `ustc`.
 On first login, the LightDM login screen requires the user to change the initial
 password before entering the desktop. Follow its prompts for the current
@@ -32,8 +32,29 @@ password, a new password, and confirmation. Cancelling or failing the change
 leaves it required at the next login; after success, subsequent logins use the
 new password without repeating setup. Console logins enforce the same change.
 
+The output directory also contains `build-info.txt` (release, architecture, build
+time, source commit and dirty state), `packages.tsv` (package, version,
+architecture and dpkg status), and `build-sources.sha256` (build recipe hashes).
+These three files are also available inside the guest at `/usr/share/101strap/`.
+Source commit/state are recorded by `build.sh`; direct container builds without
+`SOURCE_COMMIT` and `SOURCE_DIRTY` record them as `unknown`.
+`SHA256SUMS` covers the image and metadata, and is refreshed after successful OVA
+export to include VMDK, VDI, VMX and OVA files. From the output directory, run
+`sha256sum -c SHA256SUMS` to check them. Publish this checksum file through a
+trusted channel; hashes alone do not authenticate a download.
+
+Before sealing, the builder resets the machine ID and D-Bus ID, removes random
+seed and NetworkManager identity/cache files, and clears shell histories and
+build-time logs. systemd initializes the machine ID on boot. SSH server is not
+preinstalled; sealing fails if one is installed without a host-key regeneration
+mechanism. Imported VMs must receive fresh hypervisor UUIDs and MAC addresses
+(choose “copied”, not “moved”, when asked by VMware).
+
 Ubuntu packages use the USTC Ubuntu / Ubuntu Ports mirrors. Both architectures
 use Mozilla's official APT repository for Firefox and its Chinese language pack.
+Basic course tools include `python3-venv`, ShellCheck, `jq`, `manpages`,
+`manpages-dev`, OpenSSH client and `curl`. No uv or project Python environment
+is preinstalled.
 Audio uses PipeWire with WirePlumber, the Xfce PulseAudio panel plugin, and
 `pavucontrol`. The power-manager plugin is omitted from the VM's default panel.
 Labwc and Xwayland are included for trying the experimental Xfce Wayland session;
@@ -109,3 +130,18 @@ another change prompt. Then verify the version and architecture (`cat /etc/os-re
 build-arm64.log` (enable `set -o pipefail` to preserve the build exit status).
 On failure the builder unmounts its rootfs and disconnects its NBD; if unmounting
 fails it leaves the NBD attached and reports that manual cleanup is needed.
+
+For unprivileged partition-layout and checksum regression tests (requires
+Python 3 and `parted`), run `python3 -m unittest discover -s tests -v`.
+The destructive sealing fixture must only run in a disposable container:
+
+```sh
+podman run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash \
+  local/101strap:image /srv/tests/test_seal_container.sh
+```
+
+Before publishing, boot two independently imported VMs and check that
+`cat /etc/machine-id` differs between them but survives a reboot unchanged in
+each VM. Also test first-login password changes and verify `SHA256SUMS` against
+the unmodified release artifacts. These boot checks are separate from the
+container tests.

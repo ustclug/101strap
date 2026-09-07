@@ -72,11 +72,15 @@ if [[ "$HOST_ARCH" != "$ARCH" ]]; then
 fi
 trap cleanup EXIT
 
-# Create image file, EFI got 256M, and rootfs got remaining space
-qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 10G
+# Leave 1 MiB at either end for GPT and align both partitions to MiB boundaries.
+ROOT_START_MIB=$((1 + ESP_SIZE_MIB))
+ROOT_END_MIB=$((DISK_SIZE_MIB - 1))
+qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 "${DISK_SIZE_MIB}M"
 qemu-nbd -c "$NBD" --discard=unmap --detect-zeroes=unmap "$WORKSPACE"/root.qcow2
 nbd_connected=yes
-parted --script -a optimal "$NBD" mklabel gpt mkpart '"EFI System"' fat32 0% 256M set 1 esp on mkpart '"Linux system"' ext4 256M 100%
+parted --script -a optimal "$NBD" mklabel gpt \
+    mkpart '"EFI System"' fat32 1MiB "${ROOT_START_MIB}MiB" set 1 esp on \
+    mkpart '"Linux system"' ext4 "${ROOT_START_MIB}MiB" "${ROOT_END_MIB}MiB"
 
 # Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
 EFIPART="$NBD"p1
@@ -88,15 +92,13 @@ for ((attempt = 0; attempt < 50; attempt++)); do
     sleep 0.1
 done
 
-# Sanity check. TODO: automatically calc the real partition size
-if [ "$(blockdev --getsize64 "$EFIPART")" != 254803968 ]; then
+# Verify actual partition sizes before formatting either device.
+if [ "$(blockdev --getsize64 "$EFIPART")" != "$((ESP_SIZE_MIB * 1024 * 1024))" ]; then
     echo "Sanity check failed: EFI size unexpected"
     exit 1
 fi
 
-# echo $(blockdev --getsize64 "$ROOTPART")
-
-if [ "$(blockdev --getsize64 "$ROOTPART")" != 10480517120 ]; then
+if [ "$(blockdev --getsize64 "$ROOTPART")" != "$(((ROOT_END_MIB - ROOT_START_MIB) * 1024 * 1024))" ]; then
     echo "Sanity check failed: rootfs size unexpected"
     exit 1
 fi
@@ -141,6 +143,7 @@ chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
 
 # Note: xfce4-statusnotifier is no longer needed.
 inspkg desktop-base xubuntu-desktop-minimal dpkg vim htop strace bash-completion \
+    python3-venv shellcheck jq manpages manpages-dev openssh-client curl \
     network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
     labwc xwayland \
     xfce4-pulseaudio-plugin pipewire-pulse pipewire-alsa wireplumber pavucontrol \
@@ -298,7 +301,32 @@ chdo apt clean
 rm -f "$ROOT/usr/sbin/policy-rc.d"
 rm -rf "$ROOT/var/cache"/*
 
+# Save build provenance outside the image and include a copy in the guest.
+# dpkg-query expands these fields inside the guest.
+# shellcheck disable=SC2016
+chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n' \
+    | LC_ALL=C sort > "$WORKSPACE/packages.tsv"
+{
+    printf 'release=%s\nsuite=%s\narchitecture=%s\ndisk_size_mib=%s\n' "$RELEASE" "$SUITE" "$ARCH" "$DISK_SIZE_MIB"
+    printf 'built_at_utc=%s\nsource_commit=%s\nsource_dirty=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${SOURCE_COMMIT:-unknown}" "${SOURCE_DIRTY:-unknown}"
+    printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$UBUNTU_MIRROR" "$MOZILLA_MIRROR"
+} > "$WORKSPACE/build-info.txt"
+sha256sum 101strap 101strap_img 101strap_disk 101strap_checksums Dockerfile build.sh config.sh \
+    assets/configure-panel.py assets/seal-image.sh assets/toggle-hidpi > "$WORKSPACE/build-sources.sha256"
+install -d "$ROOT/usr/share/101strap"
+install -m 0644 "$WORKSPACE/build-info.txt" "$WORKSPACE/packages.tsv" \
+    "$WORKSPACE/build-sources.sha256" "$ROOT/usr/share/101strap/"
+chdo bash -s -- --image-root < /srv/assets/seal-image.sh
+
 # Trim filesystems
 sync
 fstrim -v "$EFI"
 fstrim -v "$ROOT"
+
+# Hash only after all guest filesystems are unmounted and NBD has flushed writes.
+umount -R "$ROOT"
+root_mounted=no
+qemu-nbd -d "$NBD"
+nbd_connected=no
+bash /srv/101strap_checksums "$WORKSPACE"
