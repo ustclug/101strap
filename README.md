@@ -98,6 +98,58 @@ concurrently.
 
 - If you want more information, see the Devlog.
 
+## GitHub Actions qcow2 builds
+
+Pushes and pull requests run Bash syntax, ShellCheck and Python regression tests.
+To build images, open **Actions → qcow2 images → Run workflow**, select the
+branch, and trigger it manually. After checks pass, independent native amd64
+(`ubuntu-24.04`) and arm64 (`ubuntu-24.04-arm`) Docker jobs build qcow2 images,
+with a 180-minute limit each. No emulation, OVA export or GitHub Release is used.
+The workflow must first be available on GitHub; initial dispatch is a separate,
+explicit rollout step.
+
+Download `101strap-qcow2-amd64` or `101strap-qcow2-arm64` from the completed run's
+Artifacts section. Extract the ZIP, enter the extracted directory, and run:
+
+```sh
+sha256sum -c SHA256SUMS
+qemu-img info root.qcow2
+```
+
+Each image artifact includes the existing build metadata and checksums. Artifacts
+expire after **seven days**; download them before then. They use Actions ZIP
+compression level 1. Failed builds upload diagnostics, never partial image
+artifacts. Logs, periodic disk/memory readings and cleanup diagnostics are in
+`101strap-diagnostics-<arch>`, also retained for seven days. CI writes logs under
+`RUNNER_TEMP` so logging does not dirty the source checkout.
+
+Local builds still default to `BUILD_MIRROR_MODE=ustc`. Set
+`BUILD_MIRROR_MODE=upstream` to use official Ubuntu and Flathub sources during
+construction, as Actions does. Mozilla stays on its official source. Before
+sealing, both modes configure USTC Ubuntu and Flathub sources and refresh APT
+indexes against USTC; that final refresh therefore still requires USTC access.
+`build-info.txt` records `build_mirror_mode` and `build_ubuntu_mirror` separately
+from the delivered `ubuntu_mirror`. Optional `BUILD_CONTAINER_NAME` names the
+build container; CI also uses `BUILD_CONTAINER_CIDFILE` outside the checkout to
+track the exact container ID for bounded cleanup.
+
+CI requires at least 10 GiB free on the output and Docker filesystems and records
+usage every 30 seconds. This is an initial threshold, **not a measured full-build
+space budget**. It does not remove preinstalled runner software. Full-build disk
+usage, duration and the margin on both runner architectures still need the first
+manual runs. Cancellation cleanup is best effort if the runner itself disappears;
+it only disconnects an NBD whose process can be attributed to this build's exact
+container ID.
+
+Before image upload, CI checks NBD is detached, runs `qemu-img check`, verifies
+16 GiB virtual capacity and `SHA256SUMS`, and inspects the guest read-only for
+release, architecture, course packages, final mirrors, sealed machine ID, absent
+random seed and expired initial password. These checks do not establish graphical
+boot, password-change UI behavior or independent-VM identity; those remain the
+manual tests below. Local validation currently covers regression tests and the
+Podman sealing fixture; Docker sealing and both complete native Actions builds
+still need validation in their respective environments.
+
 ## Run
 
 Install QEMU system emulators and matching UEFI firmware, then run:

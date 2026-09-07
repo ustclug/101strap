@@ -1,2 +1,4 @@
 build101/*
 *.log
+__pycache__/
+*.pyc

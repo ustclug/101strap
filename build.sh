@@ -74,10 +74,17 @@ if command -v git >/dev/null && git rev-parse --verify HEAD >/dev/null 2>&1; the
         SOURCE_DIRTY=true
     fi
 fi
-"${privilege[@]}" "$CONTAINER_ENGINE" build --target "$stage" -t "local/101strap:$stage" .
-"${privilege[@]}" "$CONTAINER_ENGINE" run --privileged --rm \
+"${privilege[@]}" "$CONTAINER_ENGINE" build --build-arg "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" --target "$stage" -t "local/101strap:$stage" .
+container_options=()
+if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
+    container_options+=(--name "$BUILD_CONTAINER_NAME")
+fi
+if [[ -n "${BUILD_CONTAINER_CIDFILE:-}" ]]; then
+    container_options+=(--cidfile "$BUILD_CONTAINER_CIDFILE")
+fi
+"${privilege[@]}" "$CONTAINER_ENGINE" run --privileged --rm "${container_options[@]}" \
     -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" -v /dev:/dev \
     "${volumes[@]}" "${emulation_volumes[@]}" \
-    -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
+    -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
     -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
     "local/101strap:$stage"

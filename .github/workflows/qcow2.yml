@@ -1,0 +1,74 @@
+name: qcow2 images
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck parted
+      - name: Syntax, ShellCheck and regression tests
+        run: |
+          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
+          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh tests/*.sh ci/*.sh
+          python3 -m unittest discover -s tests -v
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      ARCH: ${{ matrix.arch }}
+      BUILD_CONTAINER_NAME: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+      LIBGUESTFS_BACKEND: direct
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install verification tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-utils libguestfs-tools
+      - name: Build and verify
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/101strap"
+          bash ci/build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/job.log"
+      - name: Sealing fixture in disposable Docker container
+        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:image /srv/tests/test_seal_container.sh
+      - name: Upload verified image and metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: 101strap-qcow2-${{ matrix.arch }}
+          path: |
+            build101/${{ matrix.arch }}/root.qcow2
+            build101/${{ matrix.arch }}/build-info.txt
+            build101/${{ matrix.arch }}/packages.tsv
+            build101/${{ matrix.arch }}/build-sources.sha256
+            build101/${{ matrix.arch }}/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 7
+      - name: Cleanup on failure or cancellation
+        if: always()
+        run: bash ci/cleanup.sh
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: 101strap-diagnostics-${{ matrix.arch }}
+          path: ${{ runner.temp }}/101strap/
+          compression-level: 1
+          retention-days: 7
