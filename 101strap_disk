@@ -77,8 +77,6 @@ ethernet0.present = \"TRUE\"
 extendedConfigFile = \"VMware-Xubuntu-${RELEASE}-amd64.vmxf\"
 floppy0.present = \"FALSE\"
 firmware = \"efi\"
-uuid.bios = \"56 4d d6 24 f9 04 d5 18-04 9e 9d d2 ab b7 54 53\"
-uuid.location = \"56 4d d6 24 f9 04 d5 18-04 9e 9d d2 ab b7 54 53\"
 scsi0:0.redo = \"\"
 pciBridge0.pciSlotNumber = \"17\"
 pciBridge4.pciSlotNumber = \"21\"
@@ -114,9 +112,6 @@ vmotion.svga.bc67 = \"9\"
 vmotion.svga.sm5 = \"1\"
 vmotion.svga.multisample8x = \"1\"
 vmotion.svga.logicBlendOps = \"1\"
-ethernet0.generatedAddress = \"00:0c:29:b7:54:53\"
-ethernet0.generatedAddressOffset = \"0\"
-vmci0.id = \"-1414048685\"
 monitor.phys_bits_used = \"45\"
 cleanShutdown = \"TRUE\"
 softPowerOff = \"FALSE\"
@@ -154,6 +149,8 @@ VBoxManage export "VirtualBox-Xubuntu-${RELEASE}-amd64" --output "$WORKSPACE/Vir
 
 # Update permission
 chmod 644 "$WORKSPACE"/*.ova
+
+bash /srv/101strap_checksums "$WORKSPACE"
 
 # Delete .qcow2
 # rm -f "$WORKSPACE"/root.qcow2

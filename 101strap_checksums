@@ -1,0 +1,24 @@
+#!/bin/bash
+# Regenerate checksums after the image is detached or an export completes.
+set -euo pipefail
+cd -- "${1:-/target}"
+test -f root.qcow2
+shopt -s nullglob
+artifacts=(root.qcow2)
+for file in root.vmdk root.vdi VMware-Xubuntu-*.vmx VMware-Xubuntu-*.ova \
+    VirtualBox-Xubuntu-*.ova build-info.txt packages.tsv build-sources.sha256; do
+    if [[ -L "$file" ]]; then
+        echo "Refusing to hash symlink artifact: $file" >&2
+        exit 1
+    fi
+    [[ ! -f "$file" ]] || artifacts+=("$file")
+done
+if [[ -L root.qcow2 ]]; then
+    echo 'Refusing to hash symlink artifact: root.qcow2' >&2
+    exit 1
+fi
+checksum_tmp=$(mktemp ./SHA256SUMS.XXXXXX)
+trap 'rm -f -- "$checksum_tmp"' EXIT
+sha256sum -- "${artifacts[@]}" > "$checksum_tmp"
+chmod 0644 "$checksum_tmp"
+mv -f -- "$checksum_tmp" SHA256SUMS

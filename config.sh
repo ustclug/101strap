@@ -5,6 +5,8 @@
 # Shared by the host wrapper and the container entry points.
 RELEASE=26.04
 SUITE=resolute
+DISK_SIZE_MIB=16384
+ESP_SIZE_MIB=256
 # Use one complete repository for Firefox and its architecture-independent l10n packages.
 MOZILLA_MIRROR=https://packages.mozilla.org/apt
 ARCH=${ARCH:-amd64}
