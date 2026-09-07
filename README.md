@@ -7,7 +7,7 @@ This project aims to automate the generation of XUbuntu, which will be used as a
 ## Build
 
 The scripts generate Ubuntu **26.04 (Resolute)** with the Xubuntu minimal
-desktop. Build on Linux with Docker or Podman and root access to NBD devices.
+desktop. Build on Linux with Docker (with Buildx) or Podman and root access to NBD devices.
 The wrapper uses `sudo` when needed and selects Docker if installed, otherwise
 Podman. Set `CONTAINER_ENGINE=podman` to choose explicitly.
 
@@ -98,15 +98,73 @@ concurrently.
 
 - If you want more information, see the Devlog.
 
+## Layered rootfs builds and caching
+
+The wrapper builds the guest filesystem inside a container image before creating
+any disk. The cached stages are `bootstrap`, `desktop`, `applications`, `kernel`
+and `configured`. They contain debootstrap, packages and guest configuration;
+the builder's own tools live outside `/rootfs` and are not copied into the guest.
+Each stage commits only after its temporary guest mounts have been unmounted.
+Changing desktop assets rebuilds configuration without reinstalling packages.
+Changing an earlier stage invalidates its descendants.
+
+Docker builds require the Buildx plugin. The wrapper creates a persistent,
+project-specific `docker-container` builder named `101strap`, with the
+`security.insecure` entitlement required for chroot mounts. It does not change
+your default builder. Set `BUILDX_BUILDER` to use another builder configured with
+that entitlement. Podman uses rootful `--layers` builds with `SYS_ADMIN`, `MKNOD`
+and the required security options. The wrapper uses sudo for both engines.
+Rootless disk assembly is not supported. Local amd64-to-arm64 builds still
+require the host binfmt handler described above; CI uses native hosts only.
+
+```sh
+# Reuse completed stages, even after a later build failed.
+ARCH=amd64 FORMAT=qcow2 ./build.sh
+
+# Explicitly refresh tools and guest packages; keep this value for later retries.
+CACHE_EPOCH=refresh-1 ARCH=amd64 FORMAT=qcow2 ./build.sh
+
+# Build just the rootfs, without allocating NBD or requiring an empty output dir.
+ARCH=amd64 BUILD_MIRROR_MODE=upstream CACHE_EPOCH=refresh-1 \
+  python3 rootfs/build.py --engine docker --target configured
+```
+
+`CACHE_EPOCH` defaults to `0` and accepts 1–64 letters, digits, dots, underscores
+or hyphens. There is no scheduled refresh. Reusing a cache does not mean installed
+packages are current; changing the epoch reruns repository operations. The tool
+container's Ubuntu multi-architecture digest is pinned separately in `Dockerfile`
+and must be updated explicitly when changing that base. Local cache pruning or
+remote eviction causes a normal rebuild.
+
+The final disk is always new: assembly copies persistent guest files with their
+ownership, permissions, links, ACLs and extended attributes, creates fresh UUIDs,
+writes fstab, regenerates initramfs and GRUB, refreshes USTC APT indexes, records
+provenance, seals identities, and generates checksums after NBD detaches. Index
+refresh does not upgrade cached packages. `build-info.txt` includes the loaded
+rootfs image ID, cache epoch and cached rootfs construction time separately from
+the current disk build time. A failed disk build can reuse all rootfs stages;
+move its nonempty output directory aside before retrying. A failed command inside
+a stage reruns that stage, not just the failed command.
+
 ## GitHub Actions qcow2 builds
 
 Pushes and pull requests run Bash syntax, ShellCheck and Python regression tests.
-To build images, open **Actions → qcow2 images → Run workflow**, select the
-branch, and trigger it manually. After checks pass, independent native amd64
+Open **Actions → qcow2 images → Run workflow**, select the branch and cache epoch,
+and trigger the build manually. Keep the epoch unchanged to reuse cached packages;
+change it to refresh. After checks pass, independent native amd64
 (`ubuntu-24.04`) and arm64 (`ubuntu-24.04-arm`) Docker jobs build qcow2 images,
 with a 180-minute limit each. No emulation, OVA export or GitHub Release is used.
-The workflow must first be available on GitHub; initial dispatch is a separate,
-explicit rollout step.
+Initial dispatch remains a separate, explicitly authorized rollout step.
+
+CI builds and exports cumulative BuildKit `type=gha,mode=max` cache after each
+successful named stage, scoped by host platform, guest architecture and mirror
+mode. Thus a later stage failure does not discard already uploaded stages.
+The final stage is loaded for disk assembly. Cache export errors are diagnostic
+warnings; a failed build/import is retried once without the remote importer to
+allow cold construction when the cache service is unavailable. A repeated build
+failure still fails the job. A cancellation before an upload completes cannot
+guarantee that upload survives. Cache storage and eviction are subject to GitHub
+repository limits; no paid capacity is enabled automatically.
 
 Download `101strap-qcow2-amd64` or `101strap-qcow2-arm64` from the completed run's
 Artifacts section. Extract the ZIP, enter the extracted directory, and run:
@@ -116,39 +174,44 @@ sha256sum -c SHA256SUMS
 qemu-img info root.qcow2
 ```
 
-Each image artifact includes the existing build metadata and checksums. Artifacts
-expire after **seven days**; download them before then. They use Actions ZIP
-compression level 1. Failed builds upload diagnostics, never partial image
-artifacts. Logs, periodic disk/memory readings and cleanup diagnostics are in
-`101strap-diagnostics-<arch>`, also retained for seven days. CI writes logs under
-`RUNNER_TEMP` so logging does not dirty the source checkout.
+Image artifacts include build metadata and checksums, use compression level 1,
+and expire after **seven days**. Failed builds upload diagnostics, never partial
+images or unsealed rootfs containers. `101strap-diagnostics-<arch>` contains
+stage timings, build output, periodic disk/memory/container usage and cleanup
+logs, also retained for seven days. CI keeps logs and generated Dockerfiles
+outside the checkout so they do not dirty source provenance.
 
-Local builds still default to `BUILD_MIRROR_MODE=ustc`. Set
-`BUILD_MIRROR_MODE=upstream` to use official Ubuntu and Flathub sources during
-construction, as Actions does. Mozilla stays on its official source. Before
-sealing, both modes configure USTC Ubuntu and Flathub sources and refresh APT
-indexes against USTC; that final refresh therefore still requires USTC access.
-`build-info.txt` records `build_mirror_mode` and `build_ubuntu_mirror` separately
-from the delivered `ubuntu_mirror`. Optional `BUILD_CONTAINER_NAME` names the
-build container; CI also uses `BUILD_CONTAINER_CIDFILE` outside the checkout to
-track the exact container ID for bounded cleanup.
+Local builds default to `BUILD_MIRROR_MODE=ustc`; Actions uses `upstream` for
+Ubuntu and Flathub during construction. Mozilla remains official. Both modes
+restore USTC Ubuntu and Flathub configuration before sealing and strictly refresh
+APT indexes against USTC, requiring USTC connectivity even on a cache hit.
+`build-info.txt` separates construction mirrors from delivered sources.
 
-CI requires at least 10 GiB free on the output and Docker filesystems and records
-usage every 30 seconds. This is an initial threshold, **not a measured full-build
-space budget**. It does not remove preinstalled runner software. Full-build disk
-usage, duration and the margin on both runner architectures still need the first
-manual runs. Cancellation cleanup is best effort if the runner itself disappears;
-it only disconnects an NBD whose process can be attributed to this build's exact
-container ID.
+`BUILD_CONTAINER_NAME` optionally names the assembly container;
+`BUILD_CONTAINER_CIDFILE` records its exact ID. CI also tracks its disposable
+BuildKit daemon ID, collects diagnostics and performs bounded cleanup. Cleanup
+is best effort if the runner disappears; it never disconnects an NBD without
+attributing its process to the recorded assembly container.
 
-Before image upload, CI checks NBD is detached, runs `qemu-img check`, verifies
-16 GiB virtual capacity and `SHA256SUMS`, and inspects the guest read-only for
-release, architecture, course packages, final mirrors, sealed machine ID, absent
-random seed and expired initial password. These checks do not establish graphical
-boot, password-change UI behavior or independent-VM identity; those remain the
-manual tests below. Local validation currently covers regression tests and the
-Podman sealing fixture; Docker sealing and both complete native Actions builds
-still need validation in their respective environments.
+The layered build provisionally requires **20 GiB** free on the output and Docker
+filesystems (`MIN_FREE_GIB` overrides the CI preflight). This is **not a measured
+sufficient budget**: layers, unpacked images and qcow2 coexist. The first cold and
+warm builds on both native runners must measure stage/transfer time and peak disk
+usage and adjust this threshold. No preinstalled runner software is deleted.
+
+Local validation has exercised all amd64 rootfs stages with Podman, complete warm
+cache reuse, desktop-resource invalidation and failure/retry behavior. A disposable
+BuildKit 0.20.2 daemon also passed bootstrap cold and warm builds. Container
+fixtures verified sealing and metadata transfer, including ACLs and capabilities.
+These were isolated rootless-container tests of the stages, not a validation of
+rootless disk assembly or a hosted Actions run.
+
+CI checks detached NBD, `qemu-img check`, 16 GiB virtual capacity, checksums and
+the offline guest's release, architecture, course tools, mirrors, identity and
+password state before upload. Docker execution on the hosted runners, cross-run
+remote cache restoration and both complete native disk builds require rollout
+validation; local container tests do not establish graphical boot, password-change
+UI behavior or independent-VM identity. Those remain the manual tests below.
 
 ## Run
 
@@ -189,8 +252,13 @@ The destructive sealing fixture must only run in a disposable container:
 
 ```sh
 podman run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash \
-  local/101strap:image /srv/tests/test_seal_container.sh
+  local/101strap:configured /srv/tests/test_seal_container.sh
 ```
+
+To verify numeric ownership, setuid/setgid modes, ACLs and capabilities during
+rootfs transfer, run the same disposable-container command with
+`/srv/tests/test_copy_container.sh` instead. Unprivileged regression tests cover
+hardlinks, symlinks and ordinary extended attributes too.
 
 Before publishing, boot two independently imported VMs and check that
 `cat /etc/machine-id` differs between them but survives a reboot unchanged in

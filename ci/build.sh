@@ -31,7 +31,7 @@ test ! -s /sys/class/block/nbd0/pid
 # Both Docker storage and image output need room (usually the same filesystem).
 for directory in "$PWD" "$(sudo docker info --format '{{.DockerRootDir}}')"; do
     available=$(sudo df -B1 --output=avail "$directory" | tail -n 1)
-    (( available >= 10 * 1024 * 1024 * 1024 )) || { echo "Less than 10 GiB free: $directory" >&2; exit 1; }
+    (( available >= ${MIN_FREE_GIB:-20} * 1024 * 1024 * 1024 )) || { echo "Less than ${MIN_FREE_GIB:-20} GiB free (provisional layered-build threshold): $directory" >&2; exit 1; }
 done
 (
     while true; do
@@ -39,6 +39,8 @@ done
         df -h
         free -h
         du -sh build101 2>/dev/null || true
+        timeout 10s sudo docker system df || true
+        timeout 10s sudo docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
         sleep 30
     done
 ) > "$RUNNER_TEMP/101strap/resources.log" 2>&1 &

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ShellCheck 0.11 reports SC2218 here even though these functions are available;
-# chdo/inspkg and sourced helpers are defined before their first calls.
+# chdo and sourced helpers are defined before their first calls.
 # shellcheck disable=SC2218
 set -exo pipefail
 
@@ -11,10 +11,6 @@ source ./config.sh
 
 chdo() {
     chroot "$ROOT" "$@"
-}
-
-inspkg() {
-    DEBIAN_FRONTEND=noninteractive chroot "$ROOT" apt-get install --no-install-recommends --yes "$@"
 }
 
 cleanup() {
@@ -35,8 +31,6 @@ cleanup() {
 }
 
 WORKSPACE="/target"
-IMAGE_USER="ustc"
-PASSWORD="ustc"
 ROOT="/mnt/rootfs"
 EFI="$ROOT/boot/efi"
 root_mounted=no
@@ -73,6 +67,11 @@ if [[ "$HOST_ARCH" != "$ARCH" ]]; then
         exit 1
     fi
 fi
+# The immutable rootfs must match the current request before touching a disk.
+test "$(cat /rootfs-build/architecture)" = "$ARCH"
+test "$(cat /rootfs-build/mirror-mode)" = "$BUILD_MIRROR_MODE"
+test "$(cat /rootfs-build/cache-epoch)" = "$CACHE_EPOCH"
+test "$(cat /rootfs-build/stage)" = configured
 trap cleanup EXIT
 
 # Leave 1 MiB at either end for GPT and align both partitions to MiB boundaries.
@@ -114,183 +113,28 @@ mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
 mkdir -p "$ROOT"
 mount -o defaults,discard "$ROOTPART" "$ROOT"
 root_mounted=yes
+# Copy only persistent guest data, preserving filesystem metadata.
+bash /srv/rootfs/copy.sh /rootfs "$ROOT"
 mkdir -p "$EFI"
 mount "$EFIPART" "$EFI"
-
-if [[ "$HOST_ARCH" == "$ARCH" ]]; then
-    debootstrap --arch="$ARCH" "$SUITE" "$ROOT" "$UBUNTU_MIRROR"
-else
-    debootstrap --arch="$ARCH" --foreign "$SUITE" "$ROOT" "$UBUNTU_MIRROR"
-    chdo /debootstrap/debootstrap --second-stage
-fi
+rm -f "$ROOT/etc/resolv.conf"
+cp -L /etc/resolv.conf "$ROOT/etc/resolv.conf"
 mount proc "$ROOT/proc" -t proc
 mount sysfs "$ROOT/sys" -t sysfs
-
-# Package installation must not start guest daemons against the host devices.
-cat > "$ROOT/usr/sbin/policy-rc.d" <<'EOF'
-#!/bin/sh
-exit 101
-EOF
-chmod +x "$ROOT/usr/sbin/policy-rc.d"
-
-rm -f "$ROOT/etc/apt/sources.list"
-write_ubuntu_sources "$UBUNTU_MIRROR" "$UBUNTU_SECURITY_MIRROR" > "$ROOT/etc/apt/sources.list.d/ubuntu.sources"
-chdo apt update
-chdo sh -c 'dpkg --get-selections | cut -f1 | xargs apt-mark auto'
-
-# Note: xfce4-statusnotifier is no longer needed.
-inspkg desktop-base xubuntu-desktop-minimal dpkg vim htop strace bash-completion \
-    python3-venv shellcheck jq manpages manpages-dev openssh-client curl \
-    network-manager-gnome xfce4-terminal xfce4-indicator-plugin xfce4-whiskermenu-plugin mugshot \
-    labwc xwayland \
-    xfce4-pulseaudio-plugin pipewire-pulse pipewire-alsa wireplumber pavucontrol \
-    software-properties-gtk language-pack-zh-hans language-pack-gnome-zh-hans fonts-noto-cjk fcitx5 fcitx5-chinese-addons fcitx5-config-qt im-config \
-    language-selector-gnome fcitx5-frontend-gtk2 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 fcitx5-frontend-qt6 \
-    mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
-    adwaita-icon-theme command-not-found gparted policykit-1-gnome \
-    iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk \
-    gnome-software gnome-software-plugin-flatpak gnome-software-plugin-deb libgles2 psmisc
-
-if [[ "$ARCH" == amd64 ]]; then
-    inspkg xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl \
-        open-vm-tools open-vm-tools-desktop virtualbox-guest-x11
-else
-    inspkg spice-vdagent
-fi
-
-# Update command-not-found database and upgrade packages
-chdo apt update
-chdo apt upgrade -y
-
-cp assets/toggle-hidpi "$ROOT/usr/local/bin/toggle-hidpi"
-chmod +x "$ROOT/usr/local/bin/toggle-hidpi"
-
-# Use mirrored flatpak remote.
-chdo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-if [[ "$BUILD_MIRROR_MODE" == ustc ]]; then
-    chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
-fi
-chdo flatpak update -y
-
-chdo echo "flatpak is OK."
-
-# Set xdg-user-dirs to English
-mkdir -p "$ROOT/etc/skel/.config"
-cat << 'EOF' > "$ROOT/etc/skel/.config/user-dirs.dirs"
-# This file is written by xdg-user-dirs-update
-# If you want to change or add directories, just edit the line you're
-# interested in. All local changes will be retained on the next run.
-# Format is XDG_xxx_DIR="$HOME/yyy", where yyy is a shell-escaped
-# homedir-relative path, or XDG_xxx_DIR="/yyy", where /yyy is an
-# absolute path. No other format is supported.
-#
-XDG_DESKTOP_DIR="$HOME/Desktop"
-XDG_DOWNLOAD_DIR="$HOME/Downloads"
-XDG_TEMPLATES_DIR="$HOME/Templates"
-XDG_PUBLICSHARE_DIR="$HOME/Public"
-XDG_DOCUMENTS_DIR="$HOME/Documents"
-XDG_MUSIC_DIR="$HOME/Music"
-XDG_PICTURES_DIR="$HOME/Pictures"
-XDG_VIDEOS_DIR="$HOME/Videos"
-EOF
-echo "zh_CN" > "$ROOT/etc/skel/.config/user-dirs.locale"
-mkdir -p "$ROOT/etc/skel/Desktop" "$ROOT/etc/skel/Downloads" "$ROOT/etc/skel/Templates" \
- "$ROOT/etc/skel/Public" "$ROOT/etc/skel/Documents" "$ROOT/etc/skel/Music" \
- "$ROOT/etc/skel/Pictures" "$ROOT/etc/skel/Videos"
-
-chdo echo "---- Install web browser ---"
-
-chdo install -d -m 0755 /etc/apt/keyrings
-chdo wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | chdo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
-MOZILLA_FINGERPRINT=$(chdo gpg --show-keys --with-colons /etc/apt/keyrings/packages.mozilla.org.asc | awk -F: '$1 == "fpr" && !found { print $10; found=1 }')
-if [[ "$MOZILLA_FINGERPRINT" != 35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3 ]]; then
-    echo "Mozilla signing key fingerprint mismatch: $MOZILLA_FINGERPRINT" >&2
-    exit 1
-fi
-chdo echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] $MOZILLA_MIRROR mozilla main" | chdo tee /etc/apt/sources.list.d/mozilla.list > /dev/null
-chdo echo '
-Package: *
-Pin: release a=mozilla
-Pin-Priority: 1000
-' | chdo tee /etc/apt/preferences.d/mozilla
-chdo apt-get -o APT::Update::Error-Mode=any update
-inspkg firefox firefox-l10n-zh-cn
-
-# Support trash bin
-
-chdo apt install -y --no-install-recommends gvfs
-
-# Adjust xfce clock to display date in correct format
-# By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
-sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
-# The VM does not include Xfce's power manager; remove its default panel entry.
-chdo python3 - /etc/xdg/xdg-xubuntu/xfce4/panel/default.xml < /srv/assets/configure-panel.py
-# Remove "Mail reader"
-sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
-sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
-# Remove the help shortcut to leave room for course applications.
-sed -i "s/,xfhelp4.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
-# Use the system's default browser (Firefox).
-sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/helpers.rc"
-# Use default selection color in xfce4-terminal
-sed -i "/ColorSelectionUseDefault/d" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/terminal/terminalrc"
-
-# User and host configuration
-# Work around GTK's symbolic SVG parser ignoring group transforms in elementary-xfce.
-# Remove once fixed: https://github.com/shimmerproject/elementary-xfce/pull/541
-echo 'GDK_DISABLE=icon-nodes' >> "$ROOT/etc/environment"
-
-ln -sf /usr/share/zoneinfo/Asia/Shanghai "$ROOT/etc/localtime"
-chdo dpkg-reconfigure --frontend noninteractive tzdata
-
-echo "en_US.UTF-8 UTF-8" > "$ROOT/etc/locale.gen"
-echo 'LANG=zh_CN.UTF-8
-LANGUAGE="zh_CN.UTF-8"
-LC_ALL="zh_CN.UTF-8"' > "$ROOT/etc/default/locale"
-# /var/lib/locales/supported.d/zh-hans contains zh_CN.UTF-8
-chdo locale-gen
-
-chdo adduser --disabled-password --gecos "" "$IMAGE_USER"
-echo "$IMAGE_USER:$PASSWORD" | chdo chpasswd
-# LightDM/PAM presents the password-change prompts before the first desktop login.
-# A successful password change clears this flag; console logins enforce it too.
-chdo chage --lastday 0 "$IMAGE_USER"
-chdo adduser "$IMAGE_USER" sudo
-
-echo "ustclug-linux101" > "$ROOT/etc/hostname"
-echo "127.0.0.1 ustclug-linux101" >> "$ROOT/etc/hosts"
 
 ROOTUUID=$(blkid -o export "$ROOTPART" | grep -e ^UUID | cut -d'=' -f2)
 EFIUUID=$(blkid -o export "$EFIPART" | grep -e ^UUID | cut -d '=' -f2)
 echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1
 UUID=$EFIUUID\t/boot/efi\tvfat\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
 
-# Let NetworkManager manage networking
-echo "network:
-  version: 2
-  renderer: NetworkManager" > "$ROOT/etc/netplan/01-netcfg.yaml"
-
 # guest's udev messes up with host's /dev (files like /dev/kvm will have their group owners set to a wrong value)
 # so don't mount /dev inside chroot rootfs until last moment
 mount --rbind --make-rslave /dev "$ROOT/dev"
-# Install kernel and configure grub
-inspkg linux-image-virtual "$GRUB_PACKAGE" initramfs-tools cloud-initramfs-growroot
+# Regenerate boot files against this disk; packages came from the cached rootfs.
 # GRUB requires available initrd to use root=UUID=xxx
 chdo update-initramfs -k all -c
 # Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
 chdo grub-install --target="$GRUB_TARGET" --efi-directory=/boot/efi --removable --no-nvram
-# Let grub show menu for convenience of debugging
-sed -i "s/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/" "$ROOT/etc/default/grub"
-sed -i "s/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/" "$ROOT/etc/default/grub"
-
-# Show kernal messages at startup, instead of XUbuntu logo
-chdo sed -i 's/quiet//g; s/splash//g; s/  / /g; s/="\s/="/g; s/\s"/"/g' /etc/default/grub
-
-if [[ "$ARCH" == arm64 ]]; then
-    # Keep graphical output while exposing boot diagnostics and a serial login.
-    # shellcheck disable=SC2016
-    echo 'GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX console=tty0 console=ttyAMA0,115200"' >> "$ROOT/etc/default/grub"
-fi
 
 chdo update-grub
 
@@ -300,8 +144,9 @@ chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
 chdo apt-get -o APT::Update::Error-Mode=any update
 
 # Cleanup
-chdo apt autoremove -y
 chdo apt clean
+rm -f "$ROOT/etc/resolv.conf"
+ln -s /run/systemd/resolve/stub-resolv.conf "$ROOT/etc/resolv.conf"
 rm -f "$ROOT/usr/sbin/policy-rc.d"
 rm -rf "$ROOT/var/cache"/*
 
@@ -315,10 +160,11 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'built_at_utc=%s\nsource_commit=%s\nsource_dirty=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${SOURCE_COMMIT:-unknown}" "${SOURCE_DIRTY:-unknown}"
     printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$DELIVERY_UBUNTU_MIRROR" "$MOZILLA_MIRROR"
+    printf 'rootfs_image_id=%s\ncache_epoch=%s\nrootfs_built_at_utc=%s\n' "${ROOTFS_IMAGE_ID:-unknown}" "$CACHE_EPOCH" "$(cat /rootfs-build/built-at)"
     printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR"
 } > "$WORKSPACE/build-info.txt"
 sha256sum 101strap 101strap_img 101strap_disk 101strap_checksums Dockerfile build.sh config.sh \
-    assets/configure-panel.py assets/seal-image.sh assets/toggle-hidpi > "$WORKSPACE/build-sources.sha256"
+    assets/configure-panel.py assets/seal-image.sh assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
 install -d "$ROOT/usr/share/101strap"
 install -m 0644 "$WORKSPACE/build-info.txt" "$WORKSPACE/packages.tsv" \
     "$WORKSPACE/build-sources.sha256" "$ROOT/usr/share/101strap/"

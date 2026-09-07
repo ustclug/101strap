@@ -5,6 +5,16 @@ set -euo pipefail
 logs="$RUNNER_TEMP/101strap"
 mkdir -p "$logs"
 exec >> "$logs/cleanup.log" 2>&1
+cleanup_buildkit() {
+    [[ -s "$logs/buildkit.cid" ]] || return 0
+    local builder_cid
+    builder_cid=$(cat "$logs/buildkit.cid")
+    [[ "$builder_cid" =~ ^[0-9a-f]{64}$ ]] || return 1
+    timeout 10s sudo docker inspect "$builder_cid" > "$logs/buildkit.json" || return 0
+    timeout 10s sudo docker logs "$builder_cid" > "$logs/buildkit.log" 2>&1 || true
+    timeout 30s sudo docker stop --time 20 "$builder_cid"
+}
+trap cleanup_buildkit EXIT
 date -u
 timeout 10s df -h || true
 timeout 10s sudo docker ps -a --no-trunc || true
