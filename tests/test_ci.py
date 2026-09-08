@@ -52,7 +52,7 @@ class CIFailureTests(unittest.TestCase):
             )
             sudo.chmod(0o755)
             result = subprocess.run(
-                ["bash", str(REPO / "ci/cleanup.sh")],
+                ["python3", str(REPO / "ci/cleanup.py")],
                 env={
                     **os.environ,
                     "RUNNER_TEMP": directory,

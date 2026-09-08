@@ -20,8 +20,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck parted
       - name: Syntax, ShellCheck and regression tests
         run: |
-          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
-          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums test-vm.sh assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh
+          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
+          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh
           python3 -m unittest discover -s tests -v
   build:
     if: github.event_name == 'workflow_dispatch'
@@ -64,7 +64,7 @@ jobs:
       - name: Sealing fixture in disposable Docker container
         run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:configured /srv/tests/test_seal_container.sh
       - name: Rootfs metadata transfer fixture
-        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:configured /srv/tests/test_copy_container.sh
+        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint python3 local/101strap:configured /srv/tests/container/copy_metadata.py
       - name: Upload verified image and metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -80,7 +80,7 @@ jobs:
           retention-days: 7
       - name: Cleanup on failure or cancellation
         if: always()
-        run: bash ci/cleanup.sh
+        run: python3 ci/cleanup.py
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
