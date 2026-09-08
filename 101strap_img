@@ -74,15 +74,10 @@ test "$(cat /rootfs-build/cache-epoch)" = "$CACHE_EPOCH"
 test "$(cat /rootfs-build/stage)" = configured
 trap cleanup EXIT
 
-# Leave 1 MiB at either end for GPT and align both partitions to MiB boundaries.
-ROOT_START_MIB=$((1 + ESP_SIZE_MIB))
-ROOT_END_MIB=$((DISK_SIZE_MIB - 1))
 qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 "${DISK_SIZE_MIB}M"
 qemu-nbd -c "$NBD" --discard=unmap --detect-zeroes=unmap "$WORKSPACE"/root.qcow2
 nbd_connected=yes
-parted --script -a optimal "$NBD" mklabel gpt \
-    mkpart '"EFI System"' fat32 1MiB "${ROOT_START_MIB}MiB" set 1 esp on \
-    mkpart '"Linux system"' ext4 "${ROOT_START_MIB}MiB" "${ROOT_END_MIB}MiB"
+bash /srv/assets/partition-image.sh "$NBD" "$DISK_SIZE_MIB" "$ESP_SIZE_MIB"
 
 # Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
 EFIPART="$NBD"p1
@@ -100,7 +95,7 @@ if [ "$(blockdev --getsize64 "$EFIPART")" != "$((ESP_SIZE_MIB * 1024 * 1024))" ]
     exit 1
 fi
 
-if [ "$(blockdev --getsize64 "$ROOTPART")" != "$(((ROOT_END_MIB - ROOT_START_MIB) * 1024 * 1024))" ]; then
+if [ "$(blockdev --getsize64 "$ROOTPART")" != "$(((DISK_SIZE_MIB - ESP_SIZE_MIB - 2) * 1024 * 1024))" ]; then
     echo "Sanity check failed: rootfs size unexpected"
     exit 1
 fi
@@ -164,7 +159,7 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR"
 } > "$WORKSPACE/build-info.txt"
 sha256sum 101strap 101strap_img 101strap_disk 101strap_checksums Dockerfile build.sh config.sh \
-    assets/configure-panel.py assets/seal-image.sh assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
+    assets/configure-panel.py assets/seal-image.sh assets/partition-image.sh assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
 install -d "$ROOT/usr/share/101strap"
 install -m 0644 "$WORKSPACE/build-info.txt" "$WORKSPACE/packages.tsv" \
     "$WORKSPACE/build-sources.sha256" "$ROOT/usr/share/101strap/"

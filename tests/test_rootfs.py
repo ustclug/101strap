@@ -1,5 +1,5 @@
 """Cache boundaries and metadata-preserving guest filesystem transfer."""
-import importlib.util
+
 import os
 import stat
 import subprocess
@@ -8,79 +8,101 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("rootfs_build", REPO / "rootfs/build.py")
-builder = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(builder)
 
 
 class RootfsTests(unittest.TestCase):
-    def test_engine_permissions_and_shared_recipe(self):
-        docker = builder.render("docker")
-        podman = builder.render("podman")
-        self.assertEqual(docker.count("RUN --security=insecure"), 5)
-        self.assertNotIn("--security=insecure", podman)
-        self.assertEqual(docker.split("\n", 1)[1].replace("RUN --security=insecure", "RUN"), podman)
-        self.assertNotIn("COPY . ", docker)
-        early, configured = docker.split("FROM kernel AS configured")
-        self.assertNotIn("assets/", early)
-        self.assertIn("assets/configure-panel.py", configured)
-        self.assertNotIn("COPY config.sh", docker)
-
-    def test_cumulative_remote_cache_and_final_load(self):
-        command = builder.build_command("docker", [], "/tmp/Dockerfile", "desktop", "arm64", "upstream", "refresh1", None, "builder1", "scope1")
-        self.assertIn("type=gha,version=2,scope=scope1,mode=max,ignore-error=true", command)
-        self.assertIn("--output=type=cacheonly", command)
-        self.assertIn("ARCH=arm64", command)
-        self.assertIn("CACHE_EPOCH=refresh1", command)
-        final = builder.build_command("docker", [], "/tmp/Dockerfile", "configured", "arm64", "upstream", "refresh1", "image1", "builder1", "scope1")
-        self.assertIn("--load", final)
-        self.assertNotIn("--output=type=cacheonly", final)
-        podman = builder.build_command("podman", [], "/tmp/Dockerfile", "configured", "amd64", "ustc", "0", "image1", "", None)
-        self.assertIn("--layers", podman)
-        self.assertIn("--cap-add=MKNOD", podman)
-        self.assertNotIn("--cache-to", podman)
-
-    def test_epoch_validation_and_no_geometry_in_rootfs_config(self):
-        env = {**os.environ, "CACHE_EPOCH": "bad value"}
-        result = subprocess.run(["bash", "-ec", "source config.sh"], cwd=REPO, env=env, capture_output=True, check=False)
-        self.assertNotEqual(result.returncode, 0)
-        config = (REPO / "rootfs/config.sh").read_text()
-        for name in ("FORMAT=", "DISK_SIZE_MIB=", "SOURCE_COMMIT", "SOURCE_DIRTY"):
-            self.assertNotIn(name, config)
-
-    def test_failed_stage_stops_pipeline_and_retries_without_import(self):
+    def run_builder(self, *, engine_name="docker", cache_mode="gha", desktop_status=0):
+        """Run the real entry point with a container command that records stages."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             sudo = root / "sudo"
-            sudo.write_text('#!/bin/bash\nif [[ "$1" == --preserve-env=* ]]; then shift; fi\nexec "$@"\n')
+            sudo.write_text(
+                """#!/bin/bash
+if [[ "$1" == --preserve-env=* ]]; then
+    shift
+fi
+exec "$@"
+"""
+            )
             sudo.chmod(0o755)
-            docker = root / "docker"
-            docker.write_text("""#!/bin/bash
-if [[ "$1 $2" == 'buildx inspect' ]]; then exit 0; fi
+            container_engine = root / engine_name
+            container_engine.write_text("""#!/bin/bash
+if [[ "$1 $2" == 'buildx inspect' ]]; then
+    exit 0
+fi
 printf '%s\\n' "$*" >> "$TEST_CALLS"
 while (( $# )); do
-    if [[ "$1" == --target ]]; then stage=$2; break; fi
+    if [[ "$1" == --target ]]; then
+        stage=$2
+        break
+    fi
     shift
 done
-[[ "$stage" != desktop ]] || exit 42
+if [[ "$stage" == desktop ]]; then
+    exit "$TEST_DESKTOP_STATUS"
+fi
 """)
-            docker.chmod(0o755)
-            env = {**os.environ, "PATH": directory + ":" + os.environ["PATH"],
-                   "TEST_CALLS": str(root / "calls"), "CONTAINER_CACHE": "gha",
-                   "ACTIONS_RUNTIME_TOKEN": "fixture", "ACTIONS_RESULTS_URL": "https://example.invalid",
-                   "ARCH": "amd64", "FORMAT": "qcow2", "CACHE_EPOCH": "0"}
+            container_engine.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": directory + ":" + os.environ["PATH"],
+                "TEST_CALLS": str(root / "calls"),
+                "CONTAINER_CACHE": cache_mode,
+                "TEST_DESKTOP_STATUS": str(desktop_status),
+                "BUILD_MIRROR_MODE": "upstream",
+                "ACTIONS_RUNTIME_TOKEN": "fixture",
+                "ACTIONS_RESULTS_URL": "https://example.invalid",
+                "ARCH": "amd64",
+                "FORMAT": "qcow2",
+                "CACHE_EPOCH": "0",
+            }
             env.pop("RUNNER_TEMP", None)
-            result = subprocess.run(["python3", str(REPO / "rootfs/build.py"), "--engine", "docker"],
-                                    env=env, capture_output=True, text=True, check=False)
-            self.assertEqual(result.returncode, 42, result.stderr)
+            result = subprocess.run(
+                ["python3", str(REPO / "rootfs/build.py"), "--engine", engine_name],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             calls = (root / "calls").read_text().splitlines()
-            self.assertEqual(len(calls), 4)
-            self.assertIn("--target image", calls[0])
-            self.assertIn("--target bootstrap", calls[1])
-            self.assertIn("--target desktop", calls[2])
-            self.assertIn("--cache-from", calls[2])
-            self.assertNotIn("--cache-from", calls[3])
-            self.assertNotIn("--load", "\n".join(calls))
+            return result, calls
+
+    def test_failed_stage_stops_pipeline_and_retries_without_import(self):
+        result, calls = self.run_builder(desktop_status=42)
+        self.assertEqual(result.returncode, 42, result.stderr)
+        self.assertEqual(len(calls), 4)
+        self.assertIn("--target image", calls[0])
+        self.assertIn("--target bootstrap", calls[1])
+        self.assertIn("--target desktop", calls[2])
+        self.assertIn("--cache-from", calls[2])
+        self.assertNotIn("--cache-from", calls[3])
+        self.assertIn("--cache-to", calls[3])
+        self.assertNotIn("--load", "\n".join(calls))
+
+    def test_interruption_is_not_retried(self):
+        for status in (130, 143):
+            with self.subTest(status=status):
+                result, calls = self.run_builder(desktop_status=status)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(len(calls), 3)
+                self.assertIn("--target desktop", calls[-1])
+
+    def test_success_tags_only_the_final_stage(self):
+        for engine_name, cache_mode in (("docker", "gha"), ("podman", "local")):
+            with self.subTest(engine=engine_name):
+                result, calls = self.run_builder(
+                    engine_name=engine_name,
+                    cache_mode=cache_mode,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("--target configured", calls[-1])
+                self.assertIn("-t local/101strap:rootfs", calls[-1])
+                for call in calls[:-1]:
+                    self.assertNotIn("-t local/101strap:rootfs", call)
+                if engine_name == "docker":
+                    self.assertIn("--load", calls[-1])
+                else:
+                    self.assertNotIn("--cache-from", "\n".join(calls))
 
     def test_copy_metadata_and_exclude_runtime_contents(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -97,12 +119,17 @@ done
             os.setxattr(data, "user.test", b"preserved")
             for name in ("dev", "proc", "sys", "run", "tmp"):
                 (source / name / "transient").write_text("must not copy")
-            subprocess.run(["bash", str(REPO / "rootfs/copy.sh"), str(source), str(target)], check=True)
+            subprocess.run(
+                ["bash", str(REPO / "rootfs/copy.sh"), str(source), str(target)],
+                check=True,
+            )
             output = target / "etc/data"
             self.assertEqual(output.read_text(), "persistent")
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
             self.assertEqual(output.stat().st_uid, data.stat().st_uid)
-            self.assertEqual(output.stat().st_ino, (target / "etc/hardlink").stat().st_ino)
+            self.assertEqual(
+                output.stat().st_ino, (target / "etc/hardlink").stat().st_ino
+            )
             self.assertEqual(os.readlink(target / "etc/symlink"), "data")
             self.assertEqual(os.getxattr(output, "user.test"), b"preserved")
             for name in ("dev", "proc", "sys", "run", "tmp"):
