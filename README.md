@@ -12,7 +12,7 @@ The scripts generate Ubuntu **26.04 (Resolute)** with the Xubuntu minimal deskto
 # amd64: qcow2, VMDK, VDI, and VMware/VirtualBox OVA
 ./build.sh
 
-# amd64: qcow2 only; no OVF Tool or VirtualBox needed
+# amd64: qcow2 only
 ARCH=amd64 FORMAT=qcow2 ./build.sh
 
 # arm64: qcow2 for QEMU / UTM
@@ -25,7 +25,7 @@ The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. Th
 
 **Note:**
 
-- For the complete amd64 export, install the "OVF Tool for Linux Zip" [from Broadcom](https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest) in `/usr/lib/ovftool`, or set `OVFTOOL_PATH`. VirtualBox is installed in the exporter container.
+- The exporter container includes [open-vmdk](https://github.com/vmware/open-vmdk) and VirtualBox to generate the respective OVA files; no host export tools are required.
 
 - If OVA export fails, you can import the generated VMDK into VMware Workstation or VDI into VirtualBox and export it manually.
 

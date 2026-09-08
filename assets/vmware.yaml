@@ -1,0 +1,47 @@
+system:
+  name: !param name
+  type: vmx-18
+  os_vmw: ubuntu64Guest
+  firmware: efi
+  secure_boot: false
+
+networks:
+  nat:
+    name: NAT
+    description: Shared host networking
+
+hardware:
+  cpus: 1
+  memory: 2048
+  scsi:
+    type: scsi_controller
+    subtype: lsilogic
+  root_disk:
+    type: hard_disk
+    parent: scsi
+    disk_image: !param disk
+  ethernet:
+    type: ethernet
+    subtype: E1000
+    network: nat
+  usb:
+    type: usb_controller
+  video:
+    type: video_card
+    config:
+      videoRamSizeInKB: 262144
+      enable3DSupport: true
+  vmci:
+    type: vmci
+
+# Workstation settings that are not represented by standard OVF hardware items.
+extra_configs:
+  ethernet0.connectionType:
+    required: false
+    value: nat
+  sound.present:
+    required: false
+    value: true
+  sound.autoDetect:
+    required: false
+    value: true

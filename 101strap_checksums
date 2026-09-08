@@ -5,7 +5,7 @@ cd -- "${1:-/target}"
 test -f root.qcow2
 shopt -s nullglob
 artifacts=(root.qcow2)
-for file in root.vmdk root.vdi VMware-Xubuntu-*.vmx VMware-Xubuntu-*.ova \
+for file in root.vmdk root.vdi VMware-Xubuntu-*.ova \
     VirtualBox-Xubuntu-*.ova build-info.txt packages.tsv build-sources.sha256; do
     if [[ -L "$file" ]]; then
         echo "Refusing to hash symlink artifact: $file" >&2

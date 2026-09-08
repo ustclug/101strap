@@ -13,7 +13,6 @@ if [[ -z "${CONTAINER_ENGINE:-}" ]]; then
     fi
 fi
 command -v "$CONTAINER_ENGINE" >/dev/null
-OVFTOOL_PATH=${OVFTOOL_PATH:-/usr/lib/ovftool}
 NBD=${NBD:-/dev/nbd0}
 if [[ ! "$NBD" =~ ^/dev/nbd[0-9]+$ ]]; then
     echo "NBD must name a /dev/nbdN device: $NBD" >&2
@@ -22,10 +21,6 @@ fi
 OUTPUT_DIR="$PWD/build101/$ARCH"
 if [[ -e "$OUTPUT_DIR" ]] && [[ -n "$(ls -A -- "$OUTPUT_DIR")" ]]; then
     echo "Output directory is not empty: $OUTPUT_DIR. Move the previous build before retrying." >&2
-    exit 1
-fi
-if [[ "$FORMAT" == all && ! -x "$OVFTOOL_PATH/ovftool" ]]; then
-    echo "Missing $OVFTOOL_PATH/ovftool. Set OVFTOOL_PATH or use FORMAT=qcow2." >&2
     exit 1
 fi
 
@@ -49,10 +44,8 @@ if (( EUID != 0 )); then
 fi
 
 stage=configured
-volumes=()
 if [[ "$FORMAT" == all ]]; then
     stage=exporter
-    volumes=(-v "$OVFTOOL_PATH:/Ovftool:ro")
 fi
 mkdir -p -- "$OUTPUT_DIR"
 SOURCE_COMMIT=unknown
@@ -87,7 +80,7 @@ if [[ -n "${BUILD_CONTAINER_CIDFILE:-}" ]]; then
 fi
 "${privilege[@]}" "$CONTAINER_ENGINE" run --privileged --rm "${container_options[@]}" \
     -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" -v /dev:/dev \
-    "${volumes[@]}" "${emulation_volumes[@]}" \
+    "${emulation_volumes[@]}" \
     -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
     -e "ROOTFS_IMAGE_ID=$ROOTFS_IMAGE_ID" -e "CACHE_EPOCH=$CACHE_EPOCH" -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
     "$ROOTFS_IMAGE_ID"
