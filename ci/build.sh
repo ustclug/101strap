@@ -1,11 +1,16 @@
 #!/bin/bash
 # Run on a disposable native GitHub runner; logs must stay outside the checkout.
 set -euo pipefail
-: "${RUNNER_TEMP:?}" "${ARCH:?}" "${BUILD_CONTAINER_NAME:?}"
-export BUILD_CONTAINER_CIDFILE="$RUNNER_TEMP/101strap/container.cid"
-export CONTAINER_ENGINE=docker FORMAT=qcow2 BUILD_MIRROR_MODE=upstream NBD=/dev/nbd0
-mkdir -p "$RUNNER_TEMP/101strap"
-monitor=
+
+run_build_and_verify() {
+    bash build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/build.log"
+    # Do not open or hash a disk still connected to NBD.
+    test ! -s /sys/class/block/nbd0/pid
+    qemu-img check "build101/$ARCH/root.qcow2"
+    python3 ci/verify-image.py "build101/$ARCH/root.qcow2" "$ARCH"
+    (cd "build101/$ARCH" && sha256sum -c SHA256SUMS)
+}
+
 finish() {
     local status=$?
     trap - EXIT
@@ -16,38 +21,51 @@ finish() {
     bash ci/cleanup.sh || status=1
     exit "$status"
 }
-trap finish EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-sudo -n true
-sudo docker info
-case "$(uname -m):$ARCH" in
-    x86_64:amd64|aarch64:arm64) ;;
-    *) echo 'CI requires a native build host' >&2; exit 1 ;;
-esac
-sudo modprobe nbd max_part=16
-test -b "$NBD"
-test ! -s /sys/class/block/nbd0/pid
-# Both Docker storage and image output need room (usually the same filesystem).
-for directory in "$PWD" "$(sudo docker info --format '{{.DockerRootDir}}')"; do
-    available=$(sudo df -B1 --output=avail "$directory" | tail -n 1)
-    (( available >= ${MIN_FREE_GIB:-20} * 1024 * 1024 * 1024 )) || { echo "Less than ${MIN_FREE_GIB:-20} GiB free (provisional layered-build threshold): $directory" >&2; exit 1; }
-done
-(
-    while true; do
-        date -u
-        df -h
-        free -h
-        du -sh build101 2>/dev/null || true
-        timeout 10s sudo docker system df || true
-        timeout 10s sudo docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
-        sleep 30
+
+main() {
+    : "${RUNNER_TEMP:?}" "${ARCH:?}" "${BUILD_CONTAINER_NAME:?}"
+    export BUILD_CONTAINER_CIDFILE="$RUNNER_TEMP/101strap/container.cid"
+    export CONTAINER_ENGINE=docker FORMAT=qcow2 BUILD_MIRROR_MODE=upstream NBD=/dev/nbd0
+    mkdir -p "$RUNNER_TEMP/101strap"
+    monitor=
+    trap finish EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    sudo -n true
+    sudo docker info
+    case "$(uname -m):$ARCH" in
+        x86_64:amd64|aarch64:arm64) ;;
+        *)
+            echo 'CI requires a native build host' >&2
+            exit 1
+            ;;
+    esac
+    sudo modprobe nbd max_part=16
+    test -b "$NBD"
+    test ! -s /sys/class/block/nbd0/pid
+    # Both Docker storage and image output need room (usually the same filesystem).
+    for directory in "$PWD" "$(sudo docker info --format '{{.DockerRootDir}}')"; do
+        available=$(sudo df -B1 --output=avail "$directory" | tail -n 1)
+        if (( available < ${MIN_FREE_GIB:-20} * 1024 * 1024 * 1024 )); then
+            echo "Less than ${MIN_FREE_GIB:-20} GiB free (provisional layered-build threshold): $directory" >&2
+            exit 1
+        fi
     done
-) > "$RUNNER_TEMP/101strap/resources.log" 2>&1 &
-monitor=$!
-bash build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/build.log"
-# Do not open or hash a disk still connected to NBD.
-test ! -s /sys/class/block/nbd0/pid
-qemu-img check "build101/$ARCH/root.qcow2"
-python3 ci/verify-image.py "build101/$ARCH/root.qcow2" "$ARCH"
-(cd "build101/$ARCH" && sha256sum -c SHA256SUMS)
+    (
+        while true; do
+            date -u
+            df -h
+            free -h
+            du -sh build101 2>/dev/null || true
+            timeout 10s sudo docker system df || true
+            timeout 10s sudo docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
+            sleep 30
+        done
+    ) > "$RUNNER_TEMP/101strap/resources.log" 2>&1 &
+    monitor=$!
+    run_build_and_verify
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
