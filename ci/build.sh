@@ -18,7 +18,7 @@ finish() {
         kill "$monitor" 2>/dev/null || true
         wait "$monitor" 2>/dev/null || true
     fi
-    bash ci/cleanup.sh || status=1
+    python3 ci/cleanup.py || status=1
     exit "$status"
 }
 
