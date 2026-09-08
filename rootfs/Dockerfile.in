@@ -26,4 +26,4 @@ COPY assets/configure-panel.py assets/toggle-hidpi /recipe/assets/
 @RUN@ bash /recipe/run-stage.sh configured
 
 FROM configured AS exporter
-RUN apt-get update && apt-get install -y --no-install-recommends virtualbox && apt-get clean
+@EXPORTER@

@@ -37,7 +37,9 @@ def read_guest_config():
 
 
 def render(engine_name):
-    tools = (REPO / "Dockerfile").read_text().split("\nFROM image AS exporter")[0]
+    tools, exporter = (
+        (REPO / "Dockerfile").read_text().split("\nFROM image AS exporter\n", 1)
+    )
     template = (REPO / "rootfs/Dockerfile.in").read_text()
     if engine_name == "docker":
         run_instruction = "RUN --security=insecure"
@@ -46,6 +48,7 @@ def render(engine_name):
         run_instruction = "RUN"
         syntax_directive = ""
     recipe = template.replace("@TOOLS@", tools.rstrip())
+    recipe = recipe.replace("@EXPORTER@", exporter.rstrip())
     return syntax_directive + recipe.replace("@RUN@", run_instruction)
 
 
