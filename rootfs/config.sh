@@ -6,7 +6,8 @@
 RELEASE=26.04
 SUITE=resolute
 # Use one complete repository for Firefox and its architecture-independent l10n packages.
-MOZILLA_MIRROR=https://packages.mozilla.org/apt
+DELIVERY_MOZILLA_MIRROR=https://mirrors.ustc.edu.cn/mozilla/apt
+MOZILLA_MIRROR=$DELIVERY_MOZILLA_MIRROR
 BUILD_MIRROR_MODE=${BUILD_MIRROR_MODE:-ustc}
 case "$BUILD_MIRROR_MODE" in
     ustc|upstream) ;;
@@ -28,6 +29,7 @@ case "$ARCH" in
 esac
 DELIVERY_UBUNTU_MIRROR=$UBUNTU_MIRROR
 if [[ "$BUILD_MIRROR_MODE" == upstream ]]; then
+    MOZILLA_MIRROR=https://packages.mozilla.org/apt
     case "$ARCH" in
         amd64) UBUNTU_MIRROR=https://archive.ubuntu.com/ubuntu ;;
         arm64) UBUNTU_MIRROR=https://ports.ubuntu.com/ubuntu-ports ;;
@@ -52,4 +54,8 @@ Suites: $SUITE-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
+}
+
+write_mozilla_sources() {
+    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] %s mozilla main\n' "$ARCH" "$1"
 }

@@ -19,7 +19,7 @@ if [[ "$MOZILLA_FINGERPRINT" != 35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3 ]]; the
     echo "Mozilla signing key fingerprint mismatch: $MOZILLA_FINGERPRINT" >&2
     exit 1
 fi
-chdo echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] $MOZILLA_MIRROR mozilla main" | chdo tee /etc/apt/sources.list.d/mozilla.list > /dev/null
+write_mozilla_sources "$MOZILLA_MIRROR" > "$ROOT/etc/apt/sources.list.d/mozilla.list"
 chdo echo '
 Package: *
 Pin: release a=mozilla

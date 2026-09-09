@@ -135,6 +135,7 @@ chdo update-grub
 
 # Deliver the usual mirrors, including usable package-search indexes.
 write_ubuntu_sources "$DELIVERY_UBUNTU_MIRROR" "$DELIVERY_UBUNTU_MIRROR" > "$ROOT/etc/apt/sources.list.d/ubuntu.sources"
+write_mozilla_sources "$DELIVERY_MOZILLA_MIRROR" > "$ROOT/etc/apt/sources.list.d/mozilla.list"
 chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
 chdo apt-get -o APT::Update::Error-Mode=any update
 
@@ -154,9 +155,9 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'release=%s\nsuite=%s\narchitecture=%s\ndisk_size_mib=%s\n' "$RELEASE" "$SUITE" "$ARCH" "$DISK_SIZE_MIB"
     printf 'built_at_utc=%s\nsource_commit=%s\nsource_dirty=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${SOURCE_COMMIT:-unknown}" "${SOURCE_DIRTY:-unknown}"
-    printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$DELIVERY_UBUNTU_MIRROR" "$MOZILLA_MIRROR"
+    printf 'ubuntu_mirror=%s\nmozilla_mirror=%s\n' "$DELIVERY_UBUNTU_MIRROR" "$DELIVERY_MOZILLA_MIRROR"
     printf 'rootfs_image_id=%s\ncache_epoch=%s\nrootfs_built_at_utc=%s\n' "${ROOTFS_IMAGE_ID:-unknown}" "$CACHE_EPOCH" "$(cat /rootfs-build/built-at)"
-    printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR"
+    printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\nbuild_mozilla_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR" "$MOZILLA_MIRROR"
 } > "$WORKSPACE/build-info.txt"
 sha256sum image/*.sh Dockerfile build.sh config.sh \
     assets/configure-panel.py assets/seal-image.sh assets/partition-image.sh assets/export-vmware.sh assets/vmware.yaml assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
