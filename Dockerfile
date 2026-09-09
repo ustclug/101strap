@@ -10,7 +10,7 @@ RUN test -n "$CACHE_EPOCH" && case "$BUILD_MIRROR_MODE" in ustc|upstream) ;; *) 
     apt-get clean
 
 WORKDIR /srv
-CMD ["/bin/bash", "/srv/101strap"]
+CMD ["/bin/bash", "/srv/image/build.sh"]
 
 FROM image AS open-vmdk-build
 RUN apt-get update && \

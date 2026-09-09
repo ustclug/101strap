@@ -52,7 +52,7 @@ VBoxManage export "VirtualBox-Xubuntu-${RELEASE}-amd64" --output "$WORKSPACE/Vir
 # Update permission
 chmod 644 "$WORKSPACE"/*.ova
 
-bash /srv/101strap_checksums "$WORKSPACE"
+bash /srv/image/checksums.sh "$WORKSPACE"
 
 # Delete .qcow2
 # rm -f "$WORKSPACE"/root.qcow2

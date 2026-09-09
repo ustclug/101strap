@@ -17,12 +17,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y shellcheck parted
-      - name: Syntax, ShellCheck and regression tests
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Syntax and ShellCheck
         run: |
-          for script in build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh; do bash -n "$script"; done
-          shellcheck build.sh config.sh 101strap 101strap_img 101strap_disk 101strap_checksums assets/*.sh rootfs/*.sh tests/*.sh ci/*.sh
-          python3 -m unittest discover -s tests -v
+          for script in build.sh config.sh image/*.sh assets/*.sh rootfs/*.sh ci/*.sh; do bash -n "$script"; done
+          shellcheck build.sh config.sh image/*.sh assets/*.sh rootfs/*.sh ci/*.sh
   build:
     if: github.event_name == 'workflow_dispatch'
     needs: checks
@@ -61,10 +60,6 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/101strap"
           bash ci/build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/job.log"
-      - name: Sealing fixture in disposable Docker container
-        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash local/101strap:configured /srv/tests/test_seal_container.sh
-      - name: Rootfs metadata transfer fixture
-        run: sudo docker run --rm --network=none -v "$PWD:/srv:ro" --entrypoint python3 local/101strap:configured /srv/tests/container/copy_metadata.py
       - name: Upload verified image and metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

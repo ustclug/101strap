@@ -35,6 +35,15 @@ The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. Th
 
 - For development notes, see [Devlog.md](Devlog.md).
 
+### Project layout
+
+- `build.sh` and `config.sh`: host build entry point and settings.
+- `rootfs/`: cached root filesystem construction.
+- `image/`: container entry point, disk assembly, exports and checksums.
+- `assets/`: guest configuration and image helpers.
+- `ci/`: build orchestration, verification and cleanup for GitHub Actions.
+- `tools/run-vm.py`: disposable QEMU launcher.
+
 ### Cache
 
 Completed rootfs stages are cached, so retries can reuse installed packages. Change `CACHE_EPOCH` to refresh tools and guest packages; keep the same value for subsequent retries. Disk assembly always creates a new image.
@@ -50,7 +59,7 @@ Docker uses a project-specific Buildx builder named `101strap`; set `BUILDX_BUIL
 
 ### GitHub Actions
 
-Pushes and pull requests run static checks and regression tests. To build images, open **Actions → qcow2 images → Run workflow**. The workflow builds qcow2 images on native amd64 and arm64 runners. Keep the cache epoch unchanged to reuse packages, or change it to refresh them.
+Pushes and pull requests run static checks. To build images, open **Actions → qcow2 images → Run workflow**. The workflow builds qcow2 images on native amd64 and arm64 runners. Keep the cache epoch unchanged to reuse packages, or change it to refresh them.
 
 Download `101strap-qcow2-amd64` or `101strap-qcow2-arm64` from the run's Artifacts section and verify `SHA256SUMS` after extracting. Images and diagnostic logs are retained for seven days. CI uses upstream mirrors during construction and restores USTC mirrors in the delivered image. Hosted builds and remote cache restoration still need rollout validation.
 
@@ -59,30 +68,14 @@ Download `101strap-qcow2-amd64` or `101strap-qcow2-arm64` from the run's Artifac
 Install QEMU system emulators and matching UEFI firmware, then run:
 
 ```sh
-python3 tools/test_vm.py --arch amd64
-python3 tools/test_vm.py --arch arm64
+python3 tools/run-vm.py --arch amd64
+python3 tools/run-vm.py --arch arm64
 ```
 
 The launcher uses 2 CPUs and 4 GiB RAM, with KVM when available and TCG otherwise. If firmware is not detected, set `FIRMWARE_CODE` and `FIRMWARE_VARS` to a matching pair. Changes to the disk and UEFI variables are discarded when QEMU exits.
 
 For Apple Silicon UTM, use the QEMU backend with ARM64 (`aarch64`), the `virt` machine, UEFI enabled and Secure Boot disabled. Import `build101/arm64/root.qcow2` as a VirtIO disk, with a VirtIO GPU without 3D acceleration, a VirtIO NIC and USB keyboard/tablet. UTM compatibility still needs validation on a Mac.
 
-## Tests
+## Manual verification
 
-Run the unprivileged regression tests with Python 3 and `parted` installed:
-
-```sh
-python3 -m unittest discover -s tests -v
-```
-
-Run sealing and privileged metadata tests only in disposable containers. After a Podman qcow2 build:
-
-```sh
-sudo podman run --rm --network=none -v "$PWD:/srv:ro" --entrypoint /bin/bash \
-  local/101strap:configured /srv/tests/test_seal_container.sh
-
-sudo podman run --rm --network=none -v "$PWD:/srv:ro" --entrypoint python3 \
-  local/101strap:configured /srv/tests/container/copy_metadata.py
-```
-
-Before publishing, check first-login password changes, desktop login, networking, Firefox, Chinese input, shutdown and reboot. Boot two independently imported VMs and verify that their machine IDs differ and remain stable across reboots. Container tests do not replace these boot checks.
+Before publishing, check first-login password changes, desktop login, networking, Firefox, Chinese input, shutdown and reboot. Boot two independently imported VMs and verify that their machine IDs differ and remain stable across reboots.

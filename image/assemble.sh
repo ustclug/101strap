@@ -158,7 +158,7 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'rootfs_image_id=%s\ncache_epoch=%s\nrootfs_built_at_utc=%s\n' "${ROOTFS_IMAGE_ID:-unknown}" "$CACHE_EPOCH" "$(cat /rootfs-build/built-at)"
     printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR"
 } > "$WORKSPACE/build-info.txt"
-sha256sum 101strap 101strap_img 101strap_disk 101strap_checksums Dockerfile build.sh config.sh \
+sha256sum image/*.sh Dockerfile build.sh config.sh \
     assets/configure-panel.py assets/seal-image.sh assets/partition-image.sh assets/export-vmware.sh assets/vmware.yaml assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
 install -d "$ROOT/usr/share/101strap"
 install -m 0644 "$WORKSPACE/build-info.txt" "$WORKSPACE/packages.tsv" \
@@ -175,4 +175,4 @@ umount -R "$ROOT"
 root_mounted=no
 qemu-nbd -d "$NBD"
 nbd_connected=no
-bash /srv/101strap_checksums "$WORKSPACE"
+bash /srv/image/checksums.sh "$WORKSPACE"
