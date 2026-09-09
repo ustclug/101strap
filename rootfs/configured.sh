@@ -28,11 +28,8 @@ mkdir -p "$ROOT/etc/skel/Desktop" "$ROOT/etc/skel/Downloads" "$ROOT/etc/skel/Tem
  "$ROOT/etc/skel/Public" "$ROOT/etc/skel/Documents" "$ROOT/etc/skel/Music" \
  "$ROOT/etc/skel/Pictures" "$ROOT/etc/skel/Videos"
 
-# Adjust xfce clock to display date in correct format
-# By default it would look like "11 3月, 12:34", which is a bit weird in Chinese
-sed -i "s/%d %b/%x/" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
-# The VM does not include Xfce's power manager; remove its default panel entry.
-chdo python3 - /etc/xdg/xdg-xubuntu/xfce4/panel/default.xml < /recipe/assets/configure-panel.py
+# Install the project panel layout.
+install -m 0644 /recipe/assets/xfce4-panel.xml "$ROOT/etc/xdg/xdg-xubuntu/xfce4/panel/default.xml"
 # Remove "Mail reader"
 sed -i "/mail-reader/d" "$ROOT/etc/xdg/xdg-xubuntu/menus/xfce-applications.menu"
 sed -i "s/,xfce4-mail-reader.desktop//" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/whiskermenu/defaults.rc"
