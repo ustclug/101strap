@@ -46,7 +46,7 @@ The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. Th
 
 ### Cache
 
-Completed rootfs stages are cached, so retries can reuse installed packages. Change `CACHE_EPOCH` to refresh tools and guest packages; keep the same value for subsequent retries. Disk assembly always creates a new image.
+Completed rootfs stages are cached, so retries can reuse installed packages. Builds check for updates to the Ubuntu 26.04 base image; a changed base invalidates dependent layers. Change `CACHE_EPOCH` to refresh tools and guest packages; keep the same value for subsequent retries. Disk assembly always creates a new image.
 
 ```sh
 CACHE_EPOCH=refresh-1 ARCH=amd64 FORMAT=qcow2 ./build.sh
