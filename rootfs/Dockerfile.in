@@ -22,7 +22,7 @@ COPY rootfs/kernel.sh /recipe/
 
 FROM kernel AS configured
 COPY rootfs/configured.sh /recipe/
-COPY assets/configure-panel.py assets/toggle-hidpi /recipe/assets/
+COPY assets/xfce4-panel.xml assets/toggle-hidpi /recipe/assets/
 @RUN@ bash /recipe/run-stage.sh configured
 
 FROM configured AS exporter
