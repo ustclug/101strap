@@ -123,6 +123,7 @@ def build_command(
         command += [
             "buildx",
             "build",
+            "--pull",
             "--builder",
             builder_name,
             "--allow",
@@ -143,6 +144,7 @@ def build_command(
     else:
         command += [
             "build",
+            "--pull=always",
             "--layers",
             "--cap-add=SYS_ADMIN",
             "--cap-add=MKNOD",

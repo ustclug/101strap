@@ -14,7 +14,7 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -43,13 +43,13 @@ jobs:
       BUILD_CONTAINER_NAME: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
       LIBGUESTFS_BACKEND: direct
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install verification tools
         run: sudo apt-get update && sudo apt-get install -y qemu-utils libguestfs-tools
       - name: Expose temporary Actions cache credentials
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v7
         with:
           script: |
             core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
@@ -61,7 +61,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/101strap"
           bash ci/build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/job.log"
       - name: Upload verified image and metadata
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: 101strap-qcow2-${{ matrix.arch }}
           path: |
@@ -78,7 +78,7 @@ jobs:
         run: python3 ci/cleanup.py
       - name: Upload build diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: 101strap-diagnostics-${{ matrix.arch }}
           path: ${{ runner.temp }}/101strap/
