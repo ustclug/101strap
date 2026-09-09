@@ -46,7 +46,7 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 
 ### 生成 qcow2
 
-这一部分内容主要由 [taoky](https://github.com/taoky) 和 [RTXUX](https://github.com/RTXUX) 完成，全部内容均在 101strap_img 文件中。
+这一部分内容主要由 [taoky](https://github.com/taoky) 和 [RTXUX](https://github.com/RTXUX) 完成，当时的实现位于 `101strap_img`；当前镜像组装入口为 [image/assemble.sh](image/assemble.sh)。
 
 该脚本创建和配置了 XUbuntu 22.04。主要功能概括如下：
 
@@ -75,7 +75,7 @@ Docker 部署，生成基于 Ubuntu22.04 的镜像，使用脚本安装配置包
 
 ### 导出为 OVA 文件
 
-这一部分内容主要由 [xuao1](https://github.com/xuao1) 完成。全部内容均在 101strap_disk.
+这一部分内容主要由 [xuao1](https://github.com/xuao1) 完成。当时的实现位于 `101strap_disk`；当前导出入口为 [image/export.sh](image/export.sh)。
 
 该脚本主要用于将一个 QEMU QCOW2 格式的虚拟磁盘镜像文件（root.qcow2）转换为 VMware 和 VirtualBox 所支持的格式，并分别配置虚拟机，最后分别导出为 OVA 文件。
 
