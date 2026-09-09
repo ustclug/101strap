@@ -33,7 +33,7 @@ The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. Th
 
 - For an arm64 build on x86_64, install a static QEMU user emulator and enable the host's `qemu-aarch64` binfmt handler with the **F flag**. Native arm64 builds do not need emulation.
 
-- For development notes, see [Devlog.md](Devlog.md).
+- For development notes, see [Devlog-2023-03-29.md](archived/Devlog-2023-03-29.md).
 
 ### Project layout
 
