@@ -21,7 +21,7 @@ ARCH=arm64 ./build.sh
 
 Outputs are in `build101/<arch>/`, including `root.qcow2`, build metadata and `SHA256SUMS`. Run `sha256sum -c SHA256SUMS` in that directory to verify them. A nonempty output directory is rejected; move the previous build aside before retrying.
 
-The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. The username and initial password are both `ustc`; the password must be changed on first login. Ubuntu and Flathub use USTC mirrors, and Firefox uses Mozilla's official APT repository.
+The image has a sparse 16 GiB virtual disk and uses UEFI without Secure Boot. The username and initial password are both `ustc`; the password must be changed on first login. Ubuntu, Flathub and the Mozilla APT repository use USTC mirrors.
 
 **Note:**
 
