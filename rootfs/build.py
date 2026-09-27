@@ -22,6 +22,16 @@ class GuestConfig:
     cache_epoch: str
 
 
+@dataclass(frozen=True)
+class BuildConfig:
+    engine_name: str
+    engine_command: list[str]
+    dockerfile: Path
+    guest: GuestConfig
+    builder_name: str
+    cache_scope: str | None
+
+
 def read_guest_config():
     # Source the same validated configuration as the host wrapper.
     script = (
@@ -37,9 +47,6 @@ def read_guest_config():
 
 
 def render(engine_name):
-    tools, exporter = (
-        (REPO / "Dockerfile").read_text().split("\nFROM image AS exporter\n", 1)
-    )
     template = (REPO / "rootfs/Dockerfile.in").read_text()
     if engine_name == "docker":
         run_instruction = "RUN --security=insecure"
@@ -47,9 +54,7 @@ def render(engine_name):
     else:
         run_instruction = "RUN"
         syntax_directive = ""
-    recipe = template.replace("@TOOLS@", tools.rstrip())
-    recipe = recipe.replace("@EXPORTER@", exporter.rstrip())
-    return syntax_directive + recipe.replace("@RUN@", run_instruction)
+    return syntax_directive + template.replace("@RUN@", run_instruction)
 
 
 def engine_command_for(engine_name, *, use_remote_cache):
@@ -84,58 +89,50 @@ def prepare_docker_builder(engine_command, builder_name):
             check=True,
         )
 
-    runner_temp = os.environ.get("RUNNER_TEMP")
-    if runner_temp:
-        # CI cleanup needs the exact disposable daemon ID before stages start.
-        subprocess.run(
-            engine_command + ["buildx", "inspect", "--bootstrap", builder_name],
-            check=True,
-        )
-        container_id = subprocess.check_output(
-            engine_command
-            + [
-                "inspect",
-                "--format",
-                "{{.Id}}",
-                f"buildx_buildkit_{builder_name}0",
-            ],
-            text=True,
-        ).strip()
-        log_directory = Path(runner_temp) / "101strap"
-        log_directory.mkdir(parents=True, exist_ok=True)
-        (log_directory / "buildkit.cid").write_text(container_id + "\n")
+
+def record_builder_id(engine_command, builder_name, cidfile):
+    # Start the daemon so its container ID is available before building stages.
+    subprocess.run(
+        engine_command + ["buildx", "inspect", "--bootstrap", builder_name],
+        check=True,
+    )
+    container_id = subprocess.check_output(
+        engine_command
+        + ["inspect", "--format", "{{.Id}}", f"buildx_buildkit_{builder_name}0"],
+        text=True,
+    ).strip()
+    cidfile.parent.mkdir(parents=True, exist_ok=True)
+    cidfile.write_text(container_id + "\n")
 
 
 def build_command(
+    build,
     *,
-    engine_name,
-    engine_command,
-    dockerfile,
     stage,
-    config,
     tag,
-    builder_name,
-    cache_scope,
     import_remote_cache=True,
 ):
-    command = list(engine_command)
-    if engine_name == "docker":
+    command = list(build.engine_command)
+    if build.engine_name == "docker":
         command += [
             "buildx",
             "build",
             "--pull",
             "--builder",
-            builder_name,
+            build.builder_name,
             "--allow",
             "security.insecure",
             "--progress=plain",
         ]
-        if cache_scope:
+        if build.cache_scope:
             if import_remote_cache:
-                command += ["--cache-from", f"type=gha,version=2,scope={cache_scope}"]
+                command += [
+                    "--cache-from",
+                    f"type=gha,version=2,scope={build.cache_scope}",
+                ]
             command += [
                 "--cache-to",
-                f"type=gha,version=2,scope={cache_scope},mode=max,ignore-error=true",
+                f"type=gha,version=2,scope={build.cache_scope},mode=max,ignore-error=true",
             ]
         if tag:
             command += ["--load", "-t", tag]
@@ -155,68 +152,43 @@ def build_command(
             command += ["-t", tag]
     command += [
         "-f",
-        str(dockerfile),
+        str(build.dockerfile),
         "--target",
         stage,
         "--build-arg",
-        f"ARCH={config.architecture}",
+        f"ARCH={build.guest.architecture}",
         "--build-arg",
-        f"BUILD_MIRROR_MODE={config.mirror_mode}",
+        f"BUILD_MIRROR_MODE={build.guest.mirror_mode}",
         "--build-arg",
-        f"CACHE_EPOCH={config.cache_epoch}",
+        f"CACHE_EPOCH={build.guest.cache_epoch}",
         str(REPO),
     ]
     return command
 
 
-def run_stage(
-    *,
-    stage,
-    cache_scope,
-    engine_name,
-    engine_command,
-    dockerfile,
-    config,
-    tag,
-    builder_name,
-):
+def run_stage(build, *, stage, tag):
     start = time.monotonic()
     print(f"=== rootfs stage {stage}: start ===", flush=True)
-    command = build_command(
-        stage=stage,
-        cache_scope=cache_scope,
-        engine_name=engine_name,
-        engine_command=engine_command,
-        dockerfile=dockerfile,
-        config=config,
-        tag=tag,
-        builder_name=builder_name,
-    )
-    print(shlex.join(command), flush=True)
-    status = subprocess.run(command, check=False).returncode
-
-    should_retry = status != 0 and cache_scope and status not in INTERRUPTED_STATUSES
-    if should_retry:
-        # BuildKit does not reliably distinguish cache import errors from build
-        # failures. Retry once without the importer; keep exporting the cache.
-        print(
-            "Build/cache import failed; retrying using local layers only",
-            file=sys.stderr,
-            flush=True,
-        )
+    # BuildKit does not reliably distinguish cache import errors from build
+    # failures. Retry once without the importer; keep exporting the cache.
+    attempts = (True, False) if build.cache_scope else (False,)
+    for import_remote_cache in attempts:
+        if build.cache_scope and not import_remote_cache:
+            print(
+                "Build/cache import failed; retrying using local layers only",
+                file=sys.stderr,
+                flush=True,
+            )
         command = build_command(
+            build,
             stage=stage,
-            cache_scope=cache_scope,
-            engine_name=engine_name,
-            engine_command=engine_command,
-            dockerfile=dockerfile,
-            config=config,
             tag=tag,
-            builder_name=builder_name,
-            import_remote_cache=False,
+            import_remote_cache=import_remote_cache,
         )
         print(shlex.join(command), flush=True)
         status = subprocess.run(command, check=False).returncode
+        if status == 0 or status in INTERRUPTED_STATUSES:
+            break
 
     elapsed = time.monotonic() - start
     print(
@@ -239,10 +211,17 @@ def main():
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--target", choices=(*STAGES, "exporter"), default="configured")
     parser.add_argument("--tag", default="local/101strap:rootfs")
+    parser.add_argument(
+        "--builder-cidfile",
+        type=Path,
+        help="Write the Docker builder container ID to this file for cleanup",
+    )
     args = parser.parse_args()
     if args.render:
         print(render(args.engine), end="")
         return
+    if args.builder_cidfile and args.engine != "docker":
+        parser.error("--builder-cidfile requires Docker")
 
     config = read_guest_config()
     cache_mode = os.environ.get("CONTAINER_CACHE", "local")
@@ -265,22 +244,27 @@ def main():
     builder_name = os.environ.get("BUILDX_BUILDER", "101strap")
     if args.engine == "docker":
         prepare_docker_builder(engine_command, builder_name)
+        if args.builder_cidfile:
+            record_builder_id(engine_command, builder_name, args.builder_cidfile)
 
     # Keep the repository as the build context so stage-specific COPY inputs
     # determine cache invalidation, regardless of the temporary recipe path.
     with tempfile.TemporaryDirectory(prefix="101strap-recipe-") as directory:
         dockerfile = Path(directory) / "Dockerfile"
         dockerfile.write_text(render(args.engine))
+        build = BuildConfig(
+            engine_name=args.engine,
+            engine_command=engine_command,
+            dockerfile=dockerfile,
+            guest=config,
+            builder_name=builder_name,
+            cache_scope=cache_scope,
+        )
         for stage in stages_through(args.target):
             run_stage(
+                build,
                 stage=stage,
-                engine_name=args.engine,
-                engine_command=engine_command,
-                dockerfile=dockerfile,
-                config=config,
                 tag=args.tag if stage == args.target else None,
-                builder_name=builder_name,
-                cache_scope=cache_scope,
             )
 
 
