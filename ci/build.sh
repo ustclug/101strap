@@ -4,8 +4,6 @@ set -euo pipefail
 
 run_build_and_verify() {
     bash build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/build.log"
-    # Do not open or hash a disk still connected to NBD.
-    test ! -s /sys/class/block/nbd0/pid
     qemu-img check "build101/$ARCH/root.qcow2"
     python3 ci/verify-image.py "build101/$ARCH/root.qcow2" "$ARCH"
     (cd "build101/$ARCH" && sha256sum -c SHA256SUMS)
@@ -26,7 +24,7 @@ main() {
     : "${RUNNER_TEMP:?}" "${ARCH:?}" "${BUILD_CONTAINER_NAME:?}"
     export BUILD_CONTAINER_CIDFILE="$RUNNER_TEMP/101strap/container.cid"
     export BUILDER_CIDFILE="$RUNNER_TEMP/101strap/buildkit.cid"
-    export CONTAINER_ENGINE=docker FORMAT=qcow2 BUILD_MIRROR_MODE=upstream NBD=/dev/nbd0
+    export CONTAINER_ENGINE=docker FORMAT=qcow2 BUILD_MIRROR_MODE=upstream
     mkdir -p "$RUNNER_TEMP/101strap"
     monitor=
     trap finish EXIT
@@ -41,9 +39,6 @@ main() {
             exit 1
             ;;
     esac
-    sudo modprobe nbd max_part=16
-    test -b "$NBD"
-    test ! -s /sys/class/block/nbd0/pid
     # Both Docker storage and image output need room (usually the same filesystem).
     for directory in "$PWD" "$(sudo docker info --format '{{.DockerRootDir}}')"; do
         available=$(sudo df -B1 --output=avail "$directory" | tail -n 1)
