@@ -58,7 +58,12 @@ if command -v git >/dev/null && git rev-parse --verify HEAD >/dev/null 2>&1; the
     fi
 fi
 export ARCH BUILD_MIRROR_MODE CACHE_EPOCH
-python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" --tag "local/101strap:$stage"
+rootfs_options=()
+if [[ -n "${BUILDER_CIDFILE:-}" ]]; then
+    rootfs_options+=(--builder-cidfile "$BUILDER_CIDFILE")
+fi
+python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" \
+    --tag "local/101strap:$stage" "${rootfs_options[@]}"
 ROOTFS_IMAGE_ID=$("${privilege[@]}" "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
 # Loading an already loaded module is harmless; never unload other users' NBDs.
 "${privilege[@]}" modprobe nbd max_part=16

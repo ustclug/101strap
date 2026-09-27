@@ -25,6 +25,7 @@ finish() {
 main() {
     : "${RUNNER_TEMP:?}" "${ARCH:?}" "${BUILD_CONTAINER_NAME:?}"
     export BUILD_CONTAINER_CIDFILE="$RUNNER_TEMP/101strap/container.cid"
+    export BUILDER_CIDFILE="$RUNNER_TEMP/101strap/buildkit.cid"
     export CONTAINER_ENGINE=docker FORMAT=qcow2 BUILD_MIRROR_MODE=upstream NBD=/dev/nbd0
     mkdir -p "$RUNNER_TEMP/101strap"
     monitor=
