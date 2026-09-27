@@ -1,4 +1,4 @@
-"""Clean up recorded CI containers without disconnecting another build's disk."""
+"""Stop the recorded assembly and BuildKit containers after a CI build."""
 
 import os
 import re
@@ -6,9 +6,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-NBD_DEVICE = "/dev/nbd0"
-NBD_PID_FILE = Path("/sys/class/block/nbd0/pid")
 
 
 class Cleanup:
@@ -60,50 +57,11 @@ class Cleanup:
         )
         return result is not None and result.returncode == 0
 
-    def owns_disk(self, container_id, pid):
-        if pid is None:
-            return False
-        cgroup = self.run(
-            ["sudo", "cat", f"/proc/{pid}/cgroup"], output=subprocess.PIPE
-        )
-        cmdline = self.run(
-            ["sudo", "cat", f"/proc/{pid}/cmdline"], output=subprocess.PIPE
-        )
-        if cgroup is None or cmdline is None:
-            return False
-        return (
-            cgroup.returncode == 0
-            and cmdline.returncode == 0
-            and container_id in cgroup.stdout
-            and "/target/root.qcow2" in cmdline.stdout.split("\0")
-        )
-
-    def cleanup_assembly(self):
-        container_id = self.read_container_id("container.cid")
-        if container_id is None or not self.container_exists(container_id, "container"):
+    def cleanup_container(self, filename, name):
+        container_id = self.read_container_id(filename)
+        if container_id is None or not self.container_exists(container_id, name):
             return True
-
-        pid = read_nbd_pid()
-        owned_before_stop = self.owns_disk(container_id, pid)
-        if not self.stop_container(container_id, "container"):
-            return False
-
-        # The container may already have detached NBD during shutdown. If it is
-        # still attached, recheck both PID and ownership before disconnecting.
-        if owned_before_stop and read_nbd_pid() == pid:
-            if not self.owns_disk(container_id, pid):
-                return False
-            result = self.run(
-                ["sudo", "qemu-nbd", "--disconnect", NBD_DEVICE], timeout=15
-            )
-            return result is not None and result.returncode == 0
-        return True
-
-    def cleanup_buildkit(self):
-        container_id = self.read_container_id("buildkit.cid")
-        if container_id is None or not self.container_exists(container_id, "buildkit"):
-            return True
-        return self.stop_container(container_id, "buildkit")
+        return self.stop_container(container_id, name)
 
     def cleanup(self):
         print(datetime.now(timezone.utc).isoformat(), file=self.log, flush=True)
@@ -114,22 +72,17 @@ class Cleanup:
         success = True
         # Always attempt both cleanups; a builder failure must not hide an
         # assembly failure, and an assembly failure must not skip the builder.
-        for operation in (self.cleanup_assembly, self.cleanup_buildkit):
+        for filename, name in (
+            ("container.cid", "container"),
+            ("buildkit.cid", "buildkit"),
+        ):
             try:
-                if not operation():
+                if not self.cleanup_container(filename, name):
                     success = False
             except (OSError, ValueError) as error:
-                print(f"{operation.__name__}: {error}", file=self.log, flush=True)
+                print(f"{name}: {error}", file=self.log, flush=True)
                 success = False
         return success
-
-
-def read_nbd_pid():
-    try:
-        pid = NBD_PID_FILE.read_text().strip()
-    except OSError:
-        return None
-    return pid if re.fullmatch(r"[0-9]+", pid) else None
 
 
 def main():

@@ -6,7 +6,7 @@
 
 1. [build.sh](build.sh) reads the configuration, selects Docker or Podman, and checks the host architecture and output directory.
 2. [rootfs/build.py](rootfs/build.py) renders the container recipe and builds stages through `configured`, or `exporter` for `FORMAT=all`.
-3. The host loads the NBD module and starts a privileged container with the repository, output directory and host `/dev` mounted.
+3. The host starts an ordinary container with the repository and output directory mounted. If available, `/dev/kvm` is passed through for acceleration.
 4. [image/build.sh](image/build.sh) runs disk assembly and, when requested, the VMware and VirtualBox exports.
 
 [config.sh](config.sh) defines disk size, output format and cache epoch. It sources [rootfs/config.sh](rootfs/config.sh), which defines the Ubuntu release, architecture-specific packages and mirrors.
@@ -37,6 +37,8 @@ The rootfs lives at `/rootfs`. Stage metadata lives separately at `/rootfs-build
 
 Docker uses a Buildx builder named `101strap` by default. `BUILDX_BUILDER` selects another builder; it must allow the `security.insecure` entitlement needed for mounts during rootfs construction. Podman uses rootful layered builds with the required capabilities.
 
+Disk assembly runs in a libguestfs appliance inside an unprivileged container. The tools image includes its own kernel and QEMU, so it needs no host NBD devices or host filesystem mounts. This removes assembly's privileged mode; rootfs construction still requires the privileges described above. Without KVM, the appliance uses TCG. Set `LIBGUESTFS_BACKEND_SETTINGS=force_tcg` to force software emulation and `LIBGUESTFS_MEMSIZE` to change its default 2048 MiB of RAM.
+
 Stage-specific `COPY` instructions control cache invalidation. The repository remains the build context even though the rendered recipe is temporary. Builds check for an updated Ubuntu base image. Package repository changes alone do not invalidate an existing layer; change `CACHE_EPOCH` to refresh packages, then keep that value for retries.
 
 ```sh
@@ -55,17 +57,19 @@ python3 rootfs/build.py --engine docker --render
 
 Native builds support amd64 and arm64. Cross-building arm64 on x86_64 requires a static QEMU user emulator and an enabled `qemu-aarch64` binfmt handler with the `F` flag. The scripts check this before starting the image build. Cross-bootstrap uses debootstrap's foreign and second stages.
 
+The libguestfs appliance has a separate kernel. For cross-assembly, [image/run-arm64.sh](image/run-arm64.sh) uses native static BusyBox to register a static AArch64 interpreter inside that appliance. It keeps binfmt_misc mounted for each guest command and unmounts it afterward. KVM accelerates the native appliance; ARM64 commands still use QEMU user emulation. The host's binfmt registration is used only for rootfs construction. Temporary emulation helpers are removed from the delivered image.
+
 amd64 supports `FORMAT=all` and `FORMAT=qcow2`; arm64 supports qcow2 only. The amd64 desktop includes VMware and VirtualBox integration packages; arm64 includes `spice-vdagent`.
 
 `BUILD_MIRROR_MODE=ustc` is the default. CI sets it to `upstream` for construction. Assembly restores USTC Ubuntu, Mozilla and Flathub mirrors in the delivered image and refreshes APT indexes.
 
 ## Disk assembly and exports
 
-[image/assemble.sh](image/assemble.sh) verifies the cached rootfs metadata before allocating a disk. [assets/partition-image.sh](assets/partition-image.sh) creates a GPT layout with a 256 MiB EFI system partition and an ext4 root partition on the 16 GiB disk, leaving 1 MiB at either end.
+[image/assemble.sh](image/assemble.sh) verifies the cached rootfs metadata before allocating a disk. One guestfish session creates a GPT layout with a 256 MiB EFI system partition and an ext4 root partition on the 16 GiB disk, leaving 1 MiB at either end.
 
-[rootfs/copy.sh](rootfs/copy.sh) copies persistent guest files with ownership, permissions, ACLs and extended attributes. Assembly writes UUID-based `fstab` entries, regenerates the initramfs and installs GRUB at the removable UEFI path without changing host NVRAM.
+Tar export and guestfish `tar-in` preserve ownership, permissions, ACLs and extended attributes. The guest's `mkfs.fat` explicitly formats the EFI partition as FAT32. [image/finalize.sh](image/finalize.sh) runs inside the appliance's guest chroot: it writes UUID-based `fstab` entries, regenerates the initramfs and invokes the guest's GRUB 2 at the removable UEFI path without changing host NVRAM. QEMU user networking provides DNS and access to package mirrors.
 
-After sealing and trimming the filesystems, assembly unmounts them and disconnects NBD before hashing the output. Cleanup tracks mounts and the NBD connection; if unmounting fails, it leaves NBD connected for recovery. Use an unused device and do not run concurrent builds on the same NBD.
+After sealing and trimming the filesystems, assembly unmounts them and shuts down the appliance before hashing the output. Mounts and block devices exist only inside the appliance. The container runs with an init process for signal forwarding and child reaping; stopping it also stops its QEMU process. Failed builds leave the partial output directory for diagnosis and refuse to overwrite it on retry.
 
 For `FORMAT=all`, [image/export.sh](image/export.sh) converts qcow2 to VMDK and VDI. open-vmdk creates a stream-optimized copy for the VMware OVA using [assets/vmware.yaml](assets/vmware.yaml); VirtualBox creates the other OVA. Checksums are refreshed after exports. If export fails, the standalone VMDK or VDI can be imported manually.
 
@@ -88,9 +92,9 @@ The first three files are also installed under `/usr/share/101strap/` in the gue
 
 [The workflow](.github/workflows/qcow2.yml) runs shell syntax checks and ShellCheck on pushes and pull requests. Manual runs build qcow2 images on native amd64 and arm64 runners. Image artifacts and diagnostic logs are retained for seven days.
 
-[ci/build.sh](ci/build.sh) records resource usage and passes explicit container ID paths for cleanup. `BUILDER_CIDFILE` becomes `rootfs/build.py --builder-cidfile`; `BUILD_CONTAINER_CIDFILE` records the assembly container. [ci/cleanup.py](ci/cleanup.py) uses those IDs and checks NBD ownership before attempting a disconnect.
+[ci/build.sh](ci/build.sh) records resource usage and passes explicit container ID paths for cleanup. `BUILDER_CIDFILE` becomes `rootfs/build.py --builder-cidfile`; `BUILD_CONTAINER_CIDFILE` records the assembly container. [ci/cleanup.py](ci/cleanup.py) stops those recorded containers. No host disk disconnection is needed.
 
-Verification runs `qemu-img check`, [ci/verify-image.py](ci/verify-image.py) and checksum validation after NBD is detached. The Python verifier uses guestfish to inspect the image offline, checking packages, boot files, mirrors, metadata, identity cleanup and password expiry.
+Verification runs `qemu-img check`, [ci/verify-image.py](ci/verify-image.py) and checksum validation after the assembly container exits. The Python verifier uses guestfish to inspect the image offline, checking packages, boot files, mirrors, metadata, identity cleanup, removal of temporary helpers and password expiry.
 
 Before publishing, boot the images and check password changes, desktop login, networking, Firefox, Chinese input, shutdown and reboot. Boot two independently imported VMs and confirm that machine IDs differ and remain stable across reboots. Hosted builds and remote cache restoration still need rollout validation.
 

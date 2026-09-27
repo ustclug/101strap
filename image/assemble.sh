@@ -1,156 +1,45 @@
 #!/bin/bash
-
-# ShellCheck 0.11 reports SC2218 here even though these functions are available;
-# chdo and sourced helpers are defined before their first calls.
-# shellcheck disable=SC2218
-set -exo pipefail
+# Assemble the disk in a libguestfs appliance; no host block devices or mounts.
+set -euo pipefail
 
 cd /srv
 # shellcheck source=config.sh
 source ./config.sh
+WORKSPACE=/target
 
-chdo() {
-    chroot "$ROOT" "$@"
-}
-
-cleanup() {
-    local status=$?
-    trap - EXIT
-    if [ -n "${DEBUG:-}" ]; then
-        echo "Quit this bash if this is a successful run, to avoid filesystem integrity issues"
-        /bin/bash
-    fi
-    if [[ "$root_mounted" == yes ]] && ! umount -R "$ROOT"; then
-        echo "Unmount failed; leaving $NBD connected. Unmount $ROOT before disconnecting it." >&2
-        exit 1
-    fi
-    if [[ "$nbd_connected" == yes ]]; then
-        qemu-nbd -d "$NBD" || status=1
-    fi
-    exit "$status"
-}
-
-WORKSPACE="/target"
-ROOT="/mnt/rootfs"
-EFI="$ROOT/boot/efi"
-root_mounted=no
-nbd_connected=no
-
-if [[ ! "${NBD:-}" =~ ^/dev/nbd[0-9]+$ ]]; then
-    echo "NBD must name a /dev/nbdN device: ${NBD:-unset}" >&2
-    exit 1
-fi
-if [ ! -d "$WORKSPACE" ]; then
-    echo "$WORKSPACE is not a directory."
-    exit 1
-elif [ "$(id -u)" -ne 0 ]; then
-    echo "You are not root!"
-    exit 1
-elif [ ! -b "${NBD:-}" ]; then
-    echo "${NBD:-NBD} is not block device"
-    exit 1
-fi
+[[ -d "$WORKSPACE" ]]
 if [[ -e "$WORKSPACE/root.qcow2" || -L "$WORKSPACE/root.qcow2" ]]; then
     echo "Refusing to overwrite $WORKSPACE/root.qcow2" >&2
     exit 1
 fi
-if [[ -s "/sys/class/block/${NBD##*/}/pid" ]] || mountpoint -q "$ROOT"; then
-    echo "NBD or rootfs mountpoint is already in use" >&2
-    exit 1
-fi
 HOST_ARCH=$(dpkg --print-architecture)
-if [[ "$HOST_ARCH" != "$ARCH" ]]; then
-    if [[ "$HOST_ARCH:$ARCH" != amd64:arm64 ]] ||
-       ! grep -q '^enabled$' /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null ||
-       ! grep -q '^flags:.*F' /proc/sys/fs/binfmt_misc/qemu-aarch64; then
-        echo "Cross-building requires the host qemu-aarch64 binfmt handler with the F flag." >&2
+case "$HOST_ARCH:$ARCH" in
+    amd64:amd64|arm64:arm64|amd64:arm64) ;;
+    *) echo "Unsupported assembly host/target: $HOST_ARCH/$ARCH" >&2; exit 1 ;;
+esac
+check_rootfs_metadata() {
+    local field=$1 expected=$2
+    if [[ "$(cat "/rootfs-build/$field")" != "$expected" ]]; then
+        echo "Cached rootfs $field does not match $expected" >&2
         exit 1
     fi
-fi
-# The immutable rootfs must match the current request before touching a disk.
-test "$(cat /rootfs-build/architecture)" = "$ARCH"
-test "$(cat /rootfs-build/mirror-mode)" = "$BUILD_MIRROR_MODE"
-test "$(cat /rootfs-build/cache-epoch)" = "$CACHE_EPOCH"
-test "$(cat /rootfs-build/stage)" = configured
-trap cleanup EXIT
+}
+check_rootfs_metadata architecture "$ARCH"
+check_rootfs_metadata mirror-mode "$BUILD_MIRROR_MODE"
+check_rootfs_metadata cache-epoch "$CACHE_EPOCH"
+check_rootfs_metadata stage configured
 
-qemu-img create -f qcow2 "$WORKSPACE"/root.qcow2 "${DISK_SIZE_MIB}M"
-qemu-nbd -c "$NBD" --discard=unmap --detect-zeroes=unmap "$WORKSPACE"/root.qcow2
-nbd_connected=yes
-bash /srv/assets/partition-image.sh "$NBD" "$DISK_SIZE_MIB" "$ESP_SIZE_MIB"
+work=$(mktemp -d /tmp/101strap-assemble.XXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# Linux does not support device isolation (namespace), so you need to bind your /dev/ or mount devtmpfs to continue
-EFIPART="$NBD"p1
-ROOTPART="$NBD"p2
+# Tar carries ownership and capabilities into the appliance without extracting
+# files or creating guest device nodes on the host.
+tar --numeric-owner --acls --xattrs --xattrs-include='*' --one-file-system \
+    --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
+    --exclude='./run/*' --exclude='./tmp/*' -C /rootfs -cpf "$work/rootfs.tar" .
 
-# Partition nodes can appear asynchronously when the host handles udev events.
-for ((attempt = 0; attempt < 50; attempt++)); do
-    [[ -b "$EFIPART" && -b "$ROOTPART" ]] && break
-    sleep 0.1
-done
-
-# Verify actual partition sizes before formatting either device.
-if [ "$(blockdev --getsize64 "$EFIPART")" != "$((ESP_SIZE_MIB * 1024 * 1024))" ]; then
-    echo "Sanity check failed: EFI size unexpected"
-    exit 1
-fi
-
-if [ "$(blockdev --getsize64 "$ROOTPART")" != "$(((DISK_SIZE_MIB - ESP_SIZE_MIB - 2) * 1024 * 1024))" ]; then
-    echo "Sanity check failed: rootfs size unexpected"
-    exit 1
-fi
-
-# Format
-mkfs.fat -nEFI -F32 "$EFIPART"
-mkfs.ext4 -I 256 -L "Linux system" -M / "$ROOTPART"
-
-# Mount EFI partition and rootfs
-mkdir -p "$ROOT"
-mount -o defaults,discard "$ROOTPART" "$ROOT"
-root_mounted=yes
-# Copy only persistent guest data, preserving filesystem metadata.
-bash /srv/rootfs/copy.sh /rootfs "$ROOT"
-mkdir -p "$EFI"
-mount "$EFIPART" "$EFI"
-rm -f "$ROOT/etc/resolv.conf"
-cp -L /etc/resolv.conf "$ROOT/etc/resolv.conf"
-mount proc "$ROOT/proc" -t proc
-mount sysfs "$ROOT/sys" -t sysfs
-
-ROOTUUID=$(blkid -o export "$ROOTPART" | grep -e ^UUID | cut -d'=' -f2)
-EFIUUID=$(blkid -o export "$EFIPART" | grep -e ^UUID | cut -d '=' -f2)
-echo -e "UUID=$ROOTUUID\t/\text4\trw,relatime\t0\t1
-UUID=$EFIUUID\t/boot/efi\tvfat\trw,relatime\t0\t1" > "$ROOT/etc/fstab"
-
-# guest's udev messes up with host's /dev (files like /dev/kvm will have their group owners set to a wrong value)
-# so don't mount /dev inside chroot rootfs until last moment
-mount --rbind --make-rslave /dev "$ROOT/dev"
-# Regenerate boot files against this disk; packages came from the cached rootfs.
-# GRUB requires available initrd to use root=UUID=xxx
-chdo update-initramfs -k all -c
-# Note that grub-install is executed within chroot, so we don't use $ROOT and $EFI here.
-chdo grub-install --target="$GRUB_TARGET" --efi-directory=/boot/efi --removable --no-nvram
-
-chdo update-grub
-
-# Deliver the usual mirrors, including usable package-search indexes.
-write_ubuntu_sources "$DELIVERY_UBUNTU_MIRROR" "$DELIVERY_UBUNTU_MIRROR" > "$ROOT/etc/apt/sources.list.d/ubuntu.sources"
-write_mozilla_sources "$DELIVERY_MOZILLA_MIRROR" > "$ROOT/etc/apt/sources.list.d/mozilla.list"
-chdo flatpak remote-modify flathub --url=https://mirrors.ustc.edu.cn/flathub
-chdo apt-get -o APT::Update::Error-Mode=any update
-
-# Cleanup
-chdo apt clean
-rm -f "$ROOT/etc/resolv.conf"
-ln -s /run/systemd/resolve/stub-resolv.conf "$ROOT/etc/resolv.conf"
-rm -f "$ROOT/usr/sbin/policy-rc.d"
-rm -rf "$ROOT/var/cache"/*
-
-# Save build provenance outside the image and include a copy in the guest.
-# dpkg-query expands these fields inside the guest.
-# shellcheck disable=SC2016
-chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n' \
-    | LC_ALL=C sort > "$WORKSPACE/packages.tsv"
 {
     printf 'release=%s\nsuite=%s\narchitecture=%s\ndisk_size_mib=%s\n' "$RELEASE" "$SUITE" "$ARCH" "$DISK_SIZE_MIB"
     printf 'built_at_utc=%s\nsource_commit=%s\nsource_dirty=%s\n' \
@@ -159,21 +48,76 @@ chdo dpkg-query -W '-f=${binary:Package}\t${Version}\t${Architecture}\t${db:Stat
     printf 'rootfs_image_id=%s\ncache_epoch=%s\nrootfs_built_at_utc=%s\n' "${ROOTFS_IMAGE_ID:-unknown}" "$CACHE_EPOCH" "$(cat /rootfs-build/built-at)"
     printf 'build_mirror_mode=%s\nbuild_ubuntu_mirror=%s\nbuild_mozilla_mirror=%s\n' "$BUILD_MIRROR_MODE" "$UBUNTU_MIRROR" "$MOZILLA_MIRROR"
 } > "$WORKSPACE/build-info.txt"
-sha256sum image/*.sh build.sh config.sh \
-    assets/xfce4-panel.xml assets/seal-image.sh assets/partition-image.sh assets/export-vmware.sh assets/vmware.yaml assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py > "$WORKSPACE/build-sources.sha256"
-install -d "$ROOT/usr/share/101strap"
-install -m 0644 "$WORKSPACE/build-info.txt" "$WORKSPACE/packages.tsv" \
-    "$WORKSPACE/build-sources.sha256" "$ROOT/usr/share/101strap/"
-chdo bash -s -- --image-root < /srv/assets/seal-image.sh
+sha256sum image/*.sh build.sh config.sh assets/xfce4-panel.xml \
+    assets/seal-image.sh assets/export-vmware.sh assets/vmware.yaml \
+    assets/toggle-hidpi rootfs/*.sh rootfs/Dockerfile.in rootfs/build.py \
+    > "$WORKSPACE/build-sources.sha256"
 
-# Trim filesystems
+# Guestfish partition boundaries are inclusive 512-byte sectors. Leave 1 MiB
+# at either end of the disk, as in the original GPT layout.
+esp_start=2048
+root_start=$(((ESP_SIZE_MIB + 1) * 2048))
+root_end=$(((DISK_SIZE_MIB - 1) * 2048 - 1))
+export LIBGUESTFS_BACKEND=direct
+export LIBGUESTFS_MEMSIZE=${LIBGUESTFS_MEMSIZE:-2048}
+cat > "$work/assemble.fish" <<EOF_FISH
+echo "Creating disk and starting the libguestfs appliance"
+disk-create $WORKSPACE/root.qcow2 qcow2 $((DISK_SIZE_MIB * 1024 * 1024))
+add-drive $WORKSPACE/root.qcow2 format:qcow2 discard:enable
+run
+part-init /dev/sda gpt
+part-add /dev/sda p $esp_start $((root_start - 1))
+part-add /dev/sda p $root_start $root_end
+part-set-name /dev/sda 1 "EFI System"
+part-set-name /dev/sda 2 "Linux system"
+part-set-gpt-type /dev/sda 1 C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+mkfs ext4 /dev/sda2 inode:256 "label:Linux system"
+mount /dev/sda2 /
+echo "Importing the cached rootfs"
+tar-in $work/rootfs.tar / xattrs:true acls:true
+mkdir-p /boot/efi
+mkdir-p /tmp/101strap
+upload /srv/rootfs/config.sh /tmp/101strap/config.sh
+upload /srv/image/finalize.sh /tmp/101strap/finalize.sh
+upload /srv/assets/seal-image.sh /tmp/101strap/seal-image.sh
+mkdir-p /usr/share/101strap
+upload $WORKSPACE/build-info.txt /usr/share/101strap/build-info.txt
+upload $WORKSPACE/build-sources.sha256 /usr/share/101strap/build-sources.sha256
+EOF_FISH
+
+command_prefix=
+if [[ "$HOST_ARCH" != "$ARCH" ]]; then
+    # These are static binaries for the appliance's architecture. Register
+    # emulation there, independently of the host's binfmt configuration.
+    cat >> "$work/assemble.fish" <<'EOF_FISH'
+modprobe binfmt_misc
+upload /bin/busybox /tmp/101strap/busybox
+upload /usr/bin/qemu-aarch64 /tmp/101strap/qemu-aarch64
+upload /srv/image/run-arm64.sh /tmp/101strap/run-arm64.sh
+chmod 0755 /tmp/101strap/busybox
+chmod 0755 /tmp/101strap/qemu-aarch64
+EOF_FISH
+    command_prefix='/tmp/101strap/busybox sh /tmp/101strap/run-arm64.sh '
+fi
+
+cat >> "$work/assemble.fish" <<EOF_FISH
+command "${command_prefix}/usr/sbin/mkfs.fat -F32 -n EFI /dev/sda1"
+mount-vfs iocharset=utf8 vfat /dev/sda1 /boot/efi
+echo "Configuring boot files, delivery mirrors and image identity"
+command "${command_prefix}/bin/bash /tmp/101strap/finalize.sh $ARCH"
+# Set the delivered symlink after guestfish cleans up its temporary resolver.
+rm-f /etc/resolv.conf
+ln-s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+download /usr/share/101strap/packages.tsv $WORKSPACE/packages.tsv
+rm-rf /tmp/101strap
+echo "Trimming filesystems and shutting down the appliance"
 sync
-fstrim -v "$EFI"
-fstrim -v "$ROOT"
+fstrim /boot/efi
+fstrim /
+umount-all
+shutdown
+EOF_FISH
 
-# Hash only after all guest filesystems are unmounted and NBD has flushed writes.
-umount -R "$ROOT"
-root_mounted=no
-qemu-nbd -d "$NBD"
-nbd_connected=no
+guestfish --network -f "$work/assemble.fish"
+# The appliance has exited and flushed the disk before hashing or exporting.
 bash /srv/image/checksums.sh "$WORKSPACE"

@@ -4,7 +4,7 @@ Build Ubuntu 26.04 images with the Xubuntu minimal desktop for [Linux 101](https
 
 ## Build
 
-Requires Linux, Python 3, Docker with Buildx or Podman, and root access to NBD devices. The script uses `sudo` when needed. Set `CONTAINER_ENGINE=podman` to select Podman.
+Requires Linux, Python 3, Docker with Buildx or Podman, and sudo access for rootfs construction. Set `CONTAINER_ENGINE=podman` to select Podman.
 
 ```sh
 ./build.sh                         # amd64: qcow2, VMDK, VDI and VMware/VirtualBox OVA
@@ -14,7 +14,7 @@ ARCH=arm64 ./build.sh               # arm64: qcow2
 
 Outputs are in `build101/<arch>/`. Move previous builds aside before rebuilding; verify downloads with `sha256sum -c SHA256SUMS` in the output directory.
 
-Use a native host for each architecture, or see [DESIGN.md](DESIGN.md) for cross-building. NBD defaults to `/dev/nbd0`; set `NBD` to choose another unused device.
+Use a native host for each architecture, or see [DESIGN.md](DESIGN.md) for cross-building.
 
 GitHub Actions builds are available through **Actions → qcow2 images → Run workflow**. Download the `101strap-qcow2-amd64` or `101strap-qcow2-arm64` artifact.
 

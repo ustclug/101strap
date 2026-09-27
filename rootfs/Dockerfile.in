@@ -6,7 +6,12 @@ RUN test -n "$CACHE_EPOCH" && case "$BUILD_MIRROR_MODE" in ustc|upstream) ;; *) 
     if [ "$BUILD_MIRROR_MODE" = ustc ]; then sed -Ei 's@(archive|security)\.ubuntu\.com/ubuntu/?@mirrors.ustc.edu.cn/ubuntu@g; s@ports\.ubuntu\.com/ubuntu-ports/?@mirrors.ustc.edu.cn/ubuntu-ports@g' /etc/apt/sources.list.d/ubuntu.sources; fi && \
     apt-get update && \
     apt-get -y upgrade && \
-    apt-get -y install --no-install-recommends parted udev dosfstools e2fsprogs debootstrap qemu-utils ca-certificates && \
+    apt-get -y install --no-install-recommends debootstrap ca-certificates \
+        libguestfs-tools linux-image-virtual qemu-user busybox-static && \
+    case "$(dpkg --print-architecture)" in \
+        amd64) apt-get -y install --no-install-recommends qemu-system-x86 ;; \
+        arm64) apt-get -y install --no-install-recommends qemu-system-arm ;; \
+    esac && \
     apt-get clean
 
 WORKDIR /srv

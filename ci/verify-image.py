@@ -24,6 +24,10 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
     commands = [f'download {guest} "{root / name}"' for name, guest in files.items()]
     efi = "BOOTX64.EFI" if arch == "amd64" else "BOOTAA64.EFI"
     checks = [
+        ("blockdev-getsize64 /dev/sda1", str(256 * 1024**2)),
+        ("blockdev-getsize64 /dev/sda2", str((16384 - 256 - 2) * 1024**2)),
+        ("part-get-gpt-type /dev/sda 1", "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
+        ("is-file /sbin/init followsymlinks:true", "true"),
         ("readlink /var/lib/dbus/machine-id", "/etc/machine-id"),
         ("exists /var/lib/systemd/random-seed", "false"),
         (f"is-file /boot/efi/EFI/BOOT/{efi}", "true"),
@@ -31,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
         ("exists /recipe", "false"),
         ("exists /rootfs-build", "false"),
         ("exists /usr/sbin/policy-rc.d", "false"),
+        ("exists /tmp/101strap", "false"),
         ("readlink /etc/resolv.conf", "/run/systemd/resolve/stub-resolv.conf"),
         ("is-file /boot/grub/grub.cfg", "true"),
     ]
@@ -44,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
             "-m",
             "/dev/sda2",
             "-m",
-            "/dev/sda1:/boot/efi",
+            "/dev/sda1:/boot/efi:iocharset=utf8:vfat",
         ],
         input="\n".join(commands) + "\n",
         text=True,
@@ -98,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
         "firefox-l10n-zh-cn",
         "xubuntu-desktop-minimal",
         "linux-image-virtual",
+        "dosfstools",
     ]:
         assert name in packages, name
 print(

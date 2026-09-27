@@ -13,18 +13,12 @@ if [[ -z "${CONTAINER_ENGINE:-}" ]]; then
     fi
 fi
 command -v "$CONTAINER_ENGINE" >/dev/null
-NBD=${NBD:-/dev/nbd0}
-if [[ ! "$NBD" =~ ^/dev/nbd[0-9]+$ ]]; then
-    echo "NBD must name a /dev/nbdN device: $NBD" >&2
-    exit 1
-fi
 OUTPUT_DIR="$PWD/build101/$ARCH"
 if [[ -e "$OUTPUT_DIR" ]] && [[ -n "$(ls -A -- "$OUTPUT_DIR")" ]]; then
     echo "Output directory is not empty: $OUTPUT_DIR. Move the previous build before retrying." >&2
     exit 1
 fi
 
-emulation_volumes=()
 case "$(uname -m):$ARCH" in
     x86_64:amd64|aarch64:arm64) ;;
     x86_64:arm64)
@@ -33,7 +27,6 @@ case "$(uname -m):$ARCH" in
             echo "Cross-building requires an enabled qemu-aarch64 binfmt handler with the F flag on the host." >&2
             exit 1
         fi
-        emulation_volumes=(-v /proc/sys/fs/binfmt_misc:/proc/sys/fs/binfmt_misc:ro)
         ;;
     *) echo "Unsupported build host/target: $(uname -m)/$ARCH" >&2; exit 1 ;;
 esac
@@ -65,16 +58,6 @@ fi
 python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" \
     --tag "local/101strap:$stage" "${rootfs_options[@]}"
 ROOTFS_IMAGE_ID=$("${privilege[@]}" "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
-# Loading an already loaded module is harmless; never unload other users' NBDs.
-"${privilege[@]}" modprobe nbd max_part=16
-if [[ ! -b "$NBD" ]]; then
-    echo "NBD is not a block device: $NBD" >&2
-    exit 1
-fi
-if [[ -s "/sys/class/block/${NBD##*/}/pid" ]]; then
-    echo "NBD is already connected: $NBD" >&2
-    exit 1
-fi
 
 container_options=()
 if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
@@ -83,9 +66,13 @@ fi
 if [[ -n "${BUILD_CONTAINER_CIDFILE:-}" ]]; then
     container_options+=(--cidfile "$BUILD_CONTAINER_CIDFILE")
 fi
-"${privilege[@]}" "$CONTAINER_ENGINE" run --privileged --rm "${container_options[@]}" \
-    -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" -v /dev:/dev \
-    "${emulation_volumes[@]}" \
-    -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "NBD=$NBD" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
+if [[ -c /dev/kvm ]]; then
+    container_options+=(--device /dev/kvm)
+fi
+"${privilege[@]}" "$CONTAINER_ENGINE" run --init --rm "${container_options[@]}" \
+    -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" \
+    -e "LIBGUESTFS_BACKEND_SETTINGS=${LIBGUESTFS_BACKEND_SETTINGS:-}" \
+    -e "LIBGUESTFS_MEMSIZE=${LIBGUESTFS_MEMSIZE:-2048}" \
+    -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
     -e "ROOTFS_IMAGE_ID=$ROOTFS_IMAGE_ID" -e "CACHE_EPOCH=$CACHE_EPOCH" -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
     "$ROOTFS_IMAGE_ID"
