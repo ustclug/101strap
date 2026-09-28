@@ -27,7 +27,7 @@ python3 tools/run-vm.py --arch amd64
 python3 tools/run-vm.py --arch arm64
 ```
 
-The QEMU launcher discards changes when it exits. Images use a 16 GiB disk and UEFI with Secure Boot disabled. The username and initial password are both `ustc`; change the password on first login.
+The QEMU launcher discards changes when it exits. Images use a 16 GiB disk and UEFI with Secure Boot disabled. The username and password are both `ustc`.
 
 ## Further reading
 

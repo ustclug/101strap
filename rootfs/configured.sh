@@ -41,6 +41,34 @@ sed -i "s/firefox/debian-sensible-browser/g" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/he
 sed -i "/ColorSelectionUseDefault/d" "$ROOT/etc/xdg/xdg-xubuntu/xfce4/terminal/terminalrc"
 
 # User and host configuration
+# Use one XDG autostart entry for both Xfce X11 and Wayland sessions.
+# im-config would otherwise start another daemon and force GTK_IM_MODULE on X11.
+echo 'run_im none' > "$ROOT/etc/X11/xinit/xinputrc"
+install -m 0644 "$ROOT/usr/share/applications/org.fcitx.Fcitx5.desktop" \
+    "$ROOT/etc/xdg/autostart/org.fcitx.Fcitx5.desktop"
+
+# https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland
+# LightDM loads /etc/environment through PAM for both session types.
+cat << 'EOF' >> "$ROOT/etc/environment"
+XMODIFIERS=@im=fcitx
+QT_IM_MODULE=fcitx
+QT_IM_MODULES="wayland;fcitx"
+SDL_IM_MODULE=fcitx
+EOF
+
+# Leave GTK_IM_MODULE unset so native GTK Wayland clients use text-input-v3.
+# GTK configuration and XSettings select fcitx for X11/XWayland clients.
+echo 'gtk-im-module="fcitx"' > "$ROOT/etc/skel/.gtkrc-2.0"
+for gtk_version in 3.0 4.0; do
+    mkdir -p "$ROOT/etc/skel/.config/gtk-$gtk_version"
+    cat << 'EOF' > "$ROOT/etc/skel/.config/gtk-$gtk_version/settings.ini"
+[Settings]
+gtk-im-module=fcitx
+EOF
+done
+sed -i '/<property name="Gtk" type="empty">/a\    <property name="IMModule" type="string" value="fcitx"/>' \
+    "$ROOT/etc/xdg/xdg-xubuntu/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"
+
 # Work around GTK's symbolic SVG parser ignoring group transforms in elementary-xfce.
 # Remove once fixed: https://github.com/shimmerproject/elementary-xfce/pull/541
 echo 'GDK_DISABLE=icon-nodes' >> "$ROOT/etc/environment"
@@ -57,9 +85,6 @@ chdo locale-gen
 
 chdo adduser --disabled-password --gecos "" "$IMAGE_USER"
 echo "$IMAGE_USER:$PASSWORD" | chdo chpasswd
-# LightDM/PAM presents the password-change prompts before the first desktop login.
-# A successful password change clears this flag; console logins enforce it too.
-chdo chage --lastday 0 "$IMAGE_USER"
 chdo adduser "$IMAGE_USER" sudo
 
 echo "ustclug-linux101" > "$ROOT/etc/hostname"

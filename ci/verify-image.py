@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix="101strap-inspect-") as directory:
     assert "cache_epoch=" in metadata
     accounts = [line.split(":") for line in (root / "shadow").read_text().splitlines()]
     user = next(row for row in accounts if row[0] == "ustc")
-    assert user[2] == "0" and user[1].startswith("$")
+    assert user[2].isdigit() and int(user[2]) > 0 and user[1].startswith("$")
     packages = {}
     for paragraph in (root / "status").read_text().split("\n\n"):
         fields = dict(
