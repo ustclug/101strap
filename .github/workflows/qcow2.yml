@@ -59,6 +59,12 @@ jobs:
           sudo udevadm settle
           ls -l /dev/kvm
           test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm
+      - name: Check host libguestfs
+        run: |
+          # Ubuntu restricts kernel reads; supermin needs a kernel for its appliance.
+          # https://libguestfs.org/guestfs-faq.1.html
+          sudo chmod 0644 /boot/vmlinuz-*
+          libguestfs-test-tool
       - name: Expose temporary Actions cache credentials
         uses: actions/github-script@v7
         with:
