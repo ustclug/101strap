@@ -77,9 +77,15 @@ After sealing and trimming the filesystems, assembly unmounts them and shuts dow
 
 For `FORMAT=all`, [image/export.sh](image/export.sh) converts qcow2 to VMDK and VDI. open-vmdk creates a stream-optimized copy for the VMware OVA using [assets/vmware.yaml](assets/vmware.yaml); VirtualBox creates the other OVA. Checksums are refreshed after exports. If export fails, the standalone VMDK or VDI can be imported manually.
 
+## Input methods
+
+Xfce starts Fcitx 5 through `/etc/xdg/autostart/org.fcitx.Fcitx5.desktop` in both X11 and labwc Wayland sessions. The system `xinputrc` selects `none` so im-config does not start a second daemon or override the image's environment settings. LightDM's PAM session loads `XMODIFIERS`, `QT_IM_MODULE`, `QT_IM_MODULES` and `SDL_IM_MODULE` from `/etc/environment`.
+
+Following the [Fcitx Wayland guide](https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland), `GTK_IM_MODULE` stays unset: native GTK 3/4 Wayland clients use text-input-v3, while GTK configuration files and Xfce's `Gtk/IMModule` setting select fcitx for X11/XWayland. Qt 5 uses the fcitx module; the image's Qt 6 (6.8.2 or newer) tries Wayland first and falls back to fcitx. Applications bundling older Qt versions or their own input modules may need per-application overrides.
+
 ## Image identity and metadata
 
-The `ustc` account starts with password `ustc` and an expired password flag, requiring a change on first login.
+The `ustc` account starts with password `ustc` and can log in immediately. Users can change the password through the desktop or `passwd`.
 
 [assets/seal-image.sh](assets/seal-image.sh) empties `/etc/machine-id`, points the D-Bus machine ID to it, removes random seeds, NetworkManager identity data and shell histories, and clears build log contents. It refuses to seal an image containing an SSH server because first-boot host-key generation is not implemented.
 
@@ -100,10 +106,12 @@ The first three files are also installed under `/usr/share/101strap/` in the gue
 
 Verification runs `qemu-img check`, [ci/verify-image.py](ci/verify-image.py) and checksum validation after the assembly container exits. The Python verifier uses guestfish to inspect the image offline, checking packages, boot files, mirrors, metadata, identity cleanup, removal of temporary helpers and password expiry.
 
-Before publishing, boot the images and check password changes, desktop login, networking, Firefox, Chinese input, shutdown and reboot. Boot two independently imported VMs and confirm that machine IDs differ and remain stable across reboots. Hosted builds and remote cache restoration still need rollout validation.
+Before publishing, boot the images and check desktop login, networking, Firefox, Chinese input, shutdown and reboot. Boot two independently imported VMs and confirm that machine IDs differ and remain stable across reboots. Hosted builds and remote cache restoration still need rollout validation.
 
 ## Local VM checks
 
 [tools/run-vm.py](tools/run-vm.py) launches QEMU with 2 CPUs and 4 GiB RAM. It uses KVM when available on a matching host architecture and TCG otherwise. Disk changes are discarded on exit, and UEFI variables use a temporary copy. Set `FIRMWARE_CODE` and `FIRMWARE_VARS` to a matching pair if firmware discovery fails; `QEMU_DISPLAY` selects the display backend.
+
+The default display is `gtk,gl=on`, with VirGL enabled through `virtio-vga-gl` on amd64 and `virtio-gpu-gl-pci` on arm64. This requires QEMU with OpenGL/virglrenderer support and a working host OpenGL driver. Set `QEMU_DISPLAY=gtk,gl=off` for 2D graphics, or `QEMU_DISPLAY=none` for a headless session without OpenGL. `QEMU_DISPLAY=egl-headless` keeps VirGL enabled without a window.
 
 For Apple Silicon UTM, use its QEMU backend with ARM64 (`aarch64`), the `virt` machine, UEFI enabled and Secure Boot disabled. Import the qcow2 as a VirtIO disk and select a VirtIO GPU without 3D acceleration, a VirtIO NIC and USB keyboard/tablet. UTM compatibility still needs validation on a Mac.

@@ -18,6 +18,7 @@ class Platform:
     machine: str
     host_architecture: str
     graphics: tuple[str, ...]
+    graphics_gl: tuple[str, ...]
     firmware_pairs: tuple[tuple[str, str], ...]
 
 
@@ -26,7 +27,8 @@ PLATFORMS = {
         emulator="qemu-system-x86_64",
         machine="q35",
         host_architecture="x86_64",
-        graphics=("-vga", "vmware"),
+        graphics=("-vga", "virtio"),
+        graphics_gl=("-device", "virtio-vga-gl"),
         firmware_pairs=(
             (
                 "/usr/share/edk2/x64/OVMF_CODE.4m.fd",
@@ -40,6 +42,7 @@ PLATFORMS = {
         machine="virt",
         host_architecture="aarch64",
         graphics=("-device", "virtio-gpu-pci"),
+        graphics_gl=("-device", "virtio-gpu-gl-pci"),
         firmware_pairs=(
             (
                 "/usr/share/edk2/aarch64/QEMU_EFI.fd",
@@ -70,6 +73,8 @@ def find_firmware(platform):
 
 def qemu_command(platform, *, disk, firmware_code, firmware_variables, acceleration):
     cpu = "host" if acceleration == "kvm" else "max"
+    display = os.environ.get("QEMU_DISPLAY", "gtk,gl=on")
+    opengl = display.split(",")[0] == "egl-headless" or "gl=on" in display.split(",")
     return [
         platform.emulator,
         "-machine",
@@ -91,7 +96,7 @@ def qemu_command(platform, *, disk, firmware_code, firmware_variables, accelerat
         "user,id=net101",
         "-device",
         "virtio-net-pci,netdev=net101",
-        *platform.graphics,
+        *(platform.graphics_gl if opengl else platform.graphics),
         "-device",
         "qemu-xhci",
         "-device",
@@ -99,7 +104,7 @@ def qemu_command(platform, *, disk, firmware_code, firmware_variables, accelerat
         "-device",
         "usb-tablet",
         "-display",
-        os.environ.get("QEMU_DISPLAY", "gtk"),
+        display,
         "-serial",
         "mon:stdio",
     ]
