@@ -13,7 +13,7 @@ if [[ -z "${CONTAINER_ENGINE:-}" ]]; then
     fi
 fi
 command -v "$CONTAINER_ENGINE" >/dev/null
-OUTPUT_DIR="$PWD/build101/$ARCH"
+OUTPUT_DIR="$PWD/dist/$ARCH"
 if [[ -e "$OUTPUT_DIR" ]] && [[ -n "$(ls -A -- "$OUTPUT_DIR")" ]]; then
     echo "Output directory is not empty: $OUTPUT_DIR. Move the previous build before retrying." >&2
     exit 1

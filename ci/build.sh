@@ -4,9 +4,9 @@ set -euo pipefail
 
 run_build_and_verify() {
     bash build.sh 2>&1 | tee "$RUNNER_TEMP/101strap/build.log"
-    qemu-img check "build101/$ARCH/root.qcow2"
-    python3 ci/verify-image.py "build101/$ARCH/root.qcow2" "$ARCH"
-    (cd "build101/$ARCH" && sha256sum -c SHA256SUMS)
+    qemu-img check "dist/$ARCH/root.qcow2"
+    python3 ci/verify-image.py "dist/$ARCH/root.qcow2" "$ARCH"
+    (cd "dist/$ARCH" && sha256sum -c SHA256SUMS)
 }
 
 finish() {
@@ -51,7 +51,7 @@ main() {
             date -u
             df -h
             free -h
-            du -sh build101 2>/dev/null || true
+            du -sh dist 2>/dev/null || true
             timeout 10s docker system df || true
             timeout 10s docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
             sleep 30
