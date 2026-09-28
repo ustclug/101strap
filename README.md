@@ -16,11 +16,11 @@ Outputs are in `dist/<arch>/`. Move previous builds aside before rebuilding; ver
 
 Use a native host for each architecture, or build arm64 on x86_64 with Linux 6.7 or newer.
 
-GitHub Actions builds are available through **Actions → qcow2 images → Run workflow**. Download the `101strap-qcow2-amd64` or `101strap-qcow2-arm64` artifact.
+Start CI builds through **Actions → qcow2 images → Run workflow**. Successful builds publish the qcow2 image, build metadata and `SHA256SUMS` to [Releases](https://github.com/ustclug/101strap/releases), tagged `build-<run-id>-<attempt>`. CI currently builds amd64 only.
 
 ## Export an existing qcow2
 
-On an x86_64 Linux host, place an amd64 image built by this project at `dist/amd64/root.qcow2` (or extract the amd64 CI artifact there). Run from the repository root:
+On an x86_64 Linux host, place an amd64 image built by this project at `dist/amd64/root.qcow2` (rename the Release download `101strap-amd64.qcow2`, or extract the amd64 CI artifact there). Run from the repository root:
 
 ```sh
 # Prepare the export tools; skip if local/101strap:exporter already exists.

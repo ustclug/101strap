@@ -101,3 +101,39 @@ jobs:
           path: ${{ runner.temp }}/101strap/
           compression-level: 1
           retention-days: 7
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 101strap-qcow2-*
+          path: artifacts
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir release
+          for directory in artifacts/101strap-qcow2-*; do
+            arch=${directory##*101strap-qcow2-}
+            (cd "$directory" && sha256sum -c SHA256SUMS)
+            cp "$directory/root.qcow2" "release/101strap-$arch.qcow2"
+            for file in build-info.txt packages.tsv build-sources.sha256; do
+              cp "$directory/$file" "release/$arch-$file"
+            done
+          done
+          (cd release && sha256sum -- * > SHA256SUMS)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          tag="build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf 'Images built from commit %s.\n\nBuild: %s/%s/actions/runs/%s\n' \
+            "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > notes.md
+          gh release create "$tag" release/* --target "$GITHUB_SHA" \
+            --title "101strap $tag" --notes-file notes.md --draft
+          gh release edit "$tag" --draft=false
