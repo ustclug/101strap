@@ -6,10 +6,10 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 source ./config.sh
 
 if [[ -z "${CONTAINER_ENGINE:-}" ]]; then
-    if command -v docker >/dev/null; then
-        CONTAINER_ENGINE=docker
-    else
+    if command -v podman >/dev/null; then
         CONTAINER_ENGINE=podman
+    else
+        CONTAINER_ENGINE=docker
     fi
 fi
 command -v "$CONTAINER_ENGINE" >/dev/null
@@ -20,21 +20,9 @@ if [[ -e "$OUTPUT_DIR" ]] && [[ -n "$(ls -A -- "$OUTPUT_DIR")" ]]; then
 fi
 
 case "$(uname -m):$ARCH" in
-    x86_64:amd64|aarch64:arm64) ;;
-    x86_64:arm64)
-        if ! grep -q '^enabled$' /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null ||
-           ! grep -q '^flags:.*F' /proc/sys/fs/binfmt_misc/qemu-aarch64; then
-            echo "Cross-building requires an enabled qemu-aarch64 binfmt handler with the F flag on the host." >&2
-            exit 1
-        fi
-        ;;
+    x86_64:amd64|aarch64:arm64|x86_64:arm64) ;;
     *) echo "Unsupported build host/target: $(uname -m)/$ARCH" >&2; exit 1 ;;
 esac
-
-privilege=()
-if (( EUID != 0 )); then
-    privilege=(sudo)
-fi
 
 stage=configured
 if [[ "$FORMAT" == all ]]; then
@@ -57,7 +45,7 @@ if [[ -n "${BUILDER_CIDFILE:-}" ]]; then
 fi
 python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" \
     --tag "local/101strap:$stage" "${rootfs_options[@]}"
-ROOTFS_IMAGE_ID=$("${privilege[@]}" "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
+ROOTFS_IMAGE_ID=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
 
 container_options=()
 if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
@@ -66,10 +54,13 @@ fi
 if [[ -n "${BUILD_CONTAINER_CIDFILE:-}" ]]; then
     container_options+=(--cidfile "$BUILD_CONTAINER_CIDFILE")
 fi
-if [[ -c /dev/kvm ]]; then
+if [[ -r /dev/kvm && -w /dev/kvm ]]; then
     container_options+=(--device /dev/kvm)
+    if [[ "$CONTAINER_ENGINE" == podman ]]; then
+        container_options+=(--group-add keep-groups)
+    fi
 fi
-"${privilege[@]}" "$CONTAINER_ENGINE" run --init --rm "${container_options[@]}" \
+"$CONTAINER_ENGINE" run --init --rm "${container_options[@]}" \
     -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" \
     -e "LIBGUESTFS_BACKEND_SETTINGS=${LIBGUESTFS_BACKEND_SETTINGS:-}" \
     -e "LIBGUESTFS_MEMSIZE=${LIBGUESTFS_MEMSIZE:-2048}" \

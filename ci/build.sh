@@ -30,8 +30,7 @@ main() {
     trap finish EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
-    sudo -n true
-    sudo docker info
+    docker info
     case "$(uname -m):$ARCH" in
         x86_64:amd64|aarch64:arm64) ;;
         *)
@@ -40,8 +39,8 @@ main() {
             ;;
     esac
     # Both Docker storage and image output need room (usually the same filesystem).
-    for directory in "$PWD" "$(sudo docker info --format '{{.DockerRootDir}}')"; do
-        available=$(sudo df -B1 --output=avail "$directory" | tail -n 1)
+    for directory in "$PWD" "$(docker info --format '{{.DockerRootDir}}')"; do
+        available=$(df -B1 --output=avail "$directory" | tail -n 1)
         if (( available < ${MIN_FREE_GIB:-20} * 1024 * 1024 * 1024 )); then
             echo "Less than ${MIN_FREE_GIB:-20} GiB free (provisional layered-build threshold): $directory" >&2
             exit 1
@@ -53,8 +52,8 @@ main() {
             df -h
             free -h
             du -sh build101 2>/dev/null || true
-            timeout 10s sudo docker system df || true
-            timeout 10s sudo docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
+            timeout 10s docker system df || true
+            timeout 10s docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
             sleep 30
         done
     ) > "$RUNNER_TEMP/101strap/resources.log" 2>&1 &

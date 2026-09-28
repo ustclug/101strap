@@ -33,26 +33,26 @@ FROM image AS bootstrap
 ARG ARCH=amd64
 ARG CACHE_EPOCH=0
 ARG BUILD_MIRROR_MODE=ustc
-COPY rootfs/config.sh rootfs/run-stage.sh /recipe/
+COPY rootfs/config.sh rootfs/run-stage.sh rootfs/unshare.sh /recipe/
 COPY rootfs/bootstrap.sh /recipe/
-@RUN@ bash /recipe/run-stage.sh bootstrap
+@RUN@ bash /recipe/unshare.sh bootstrap
 
 FROM bootstrap AS desktop
 COPY rootfs/desktop.sh /recipe/
-@RUN@ bash /recipe/run-stage.sh desktop
+@RUN@ bash /recipe/unshare.sh desktop
 
 FROM desktop AS applications
 COPY rootfs/applications.sh /recipe/
-@RUN@ bash /recipe/run-stage.sh applications
+@RUN@ bash /recipe/unshare.sh applications
 
 FROM applications AS kernel
 COPY rootfs/kernel.sh /recipe/
-@RUN@ bash /recipe/run-stage.sh kernel
+@RUN@ bash /recipe/unshare.sh kernel
 
 FROM kernel AS configured
 COPY rootfs/configured.sh /recipe/
 COPY assets/xfce4-panel.xml assets/toggle-hidpi /recipe/assets/
-@RUN@ bash /recipe/run-stage.sh configured
+@RUN@ bash /recipe/unshare.sh configured
 
 FROM configured AS exporter
 COPY --from=open-vmdk-build /tmp/open-vmdk/build/vmdk/vmdk-convert /usr/local/bin/vmdk-convert
