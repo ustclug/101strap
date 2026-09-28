@@ -1,4 +1,4 @@
-"""Build cached guest stages with Docker BuildKit or rootful Podman."""
+"""Build cached guest stages in user namespaces with Podman or Docker BuildKit."""
 
 import argparse
 import os
@@ -55,15 +55,6 @@ def render(engine_name):
         run_instruction = "RUN"
         syntax_directive = ""
     return syntax_directive + template.replace("@RUN@", run_instruction)
-
-
-def engine_command_for(engine_name, *, use_remote_cache):
-    command = []
-    if os.geteuid() != 0:
-        command.append("sudo")
-        if use_remote_cache:
-            command.append("--preserve-env=ACTIONS_RUNTIME_TOKEN,ACTIONS_RESULTS_URL")
-    return command + [engine_name]
 
 
 def prepare_docker_builder(engine_command, builder_name):
@@ -143,9 +134,8 @@ def build_command(
             "build",
             "--pull=always",
             "--layers",
-            "--cap-add=SYS_ADMIN",
-            "--cap-add=MKNOD",
             "--security-opt=seccomp=unconfined",
+            "--security-opt=apparmor=unconfined",
             "--security-opt=label=disable",
         ]
         if tag:
@@ -240,7 +230,7 @@ def main():
             f"-{config.architecture}-{config.mirror_mode}"
         )
 
-    engine_command = engine_command_for(args.engine, use_remote_cache=use_remote_cache)
+    engine_command = [args.engine]
     builder_name = os.environ.get("BUILDX_BUILDER", "101strap")
     if args.engine == "docker":
         prepare_docker_builder(engine_command, builder_name)

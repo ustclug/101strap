@@ -39,20 +39,20 @@ class Cleanup:
     def container_exists(self, container_id, name):
         with (self.directory / f"{name}.json").open("w") as output:
             result = self.run(
-                ["sudo", "docker", "inspect", container_id], output=output
+                ["docker", "inspect", container_id], output=output
             )
         return result is not None and result.returncode == 0
 
     def stop_container(self, container_id, name):
         with (self.directory / f"{name}.log").open("w") as output:
             self.run(
-                ["sudo", "docker", "logs", container_id],
+                ["docker", "logs", container_id],
                 output=output,
                 combine_output=True,
             )
         # Docker sends SIGKILL if the entrypoint does not finish within 20 seconds.
         result = self.run(
-            ["sudo", "docker", "stop", "--time", "20", container_id],
+            ["docker", "stop", "--time", "20", container_id],
             timeout=30,
         )
         return result is not None and result.returncode == 0
@@ -66,8 +66,8 @@ class Cleanup:
     def cleanup(self):
         print(datetime.now(timezone.utc).isoformat(), file=self.log, flush=True)
         self.run(["df", "-h"])
-        self.run(["sudo", "docker", "ps", "-a", "--no-trunc"])
-        self.run(["sudo", "docker", "system", "df"])
+        self.run(["docker", "ps", "-a", "--no-trunc"])
+        self.run(["docker", "system", "df"])
 
         success = True
         # Always attempt both cleanups; a builder failure must not hide an

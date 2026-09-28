@@ -27,17 +27,21 @@
 
 The `open-vmdk-build` stage builds a pinned source archive and supplies tools to `exporter`.
 
-[rootfs/run-stage.sh](rootfs/run-stage.sh) provides `ROOT`, `chdo` and `inspkg` to the stage scripts, which it sources into the same shell. It mounts the guest's runtime filesystems and unmounts them before the layer completes. Bootstrap creates the rootfs before requesting these mounts.
+[rootfs/unshare.sh](rootfs/unshare.sh) gives each stage its own user, mount, UTS and IPC namespaces. It maps all container UIDs/GIDs unchanged into the child namespace, so package accounts and file ownership survive between layers. The container supplies PID isolation. [rootfs/run-stage.sh](rootfs/run-stage.sh) provides `ROOT`, `chdo` and `inspkg` to the stage scripts, which it sources into the same shell.
 
-During package installation, the guest sees basic character devices and a read-only bind of `/sys`. `policy-rc.d` prevents guest services from starting. Each stage temporarily copies the builder's DNS configuration, then restores the guest's systemd-resolved symlink and removes transient files from `/run` and `/tmp`.
+Bootstrap extracts packages with debootstrap's foreign stage on both architectures, prepares runtime mounts and `policy-rc.d`, then runs the second stage. This ensures guest package scripts use the same mounts as later stages.
+
+During package installation, the guest sees basic character devices and recursive binds of the container's `/proc` and read-only `/sys`. Recursive binds preserve locked submounts inherited from the container. Cleanup detaches each mount tree as a unit; the stage namespace exits before the layer is committed. `policy-rc.d` prevents guest services from starting. Each stage temporarily copies the builder's DNS configuration, then restores the guest's systemd-resolved symlink and removes transient files from `/run` and `/tmp`.
 
 The rootfs lives at `/rootfs`. Stage metadata lives separately at `/rootfs-build`, including architecture, mirror mode, cache epoch and build time.
 
 ## Engines and caching
 
-Docker uses a Buildx builder named `101strap` by default. `BUILDX_BUILDER` selects another builder; it must allow the `security.insecure` entitlement needed for mounts during rootfs construction. Podman uses rootful layered builds with the required capabilities.
+Podman is selected by default when installed. Run it as an ordinary user with rootless storage, unprivileged user namespaces enabled, and at least 65536 subordinate UIDs and GIDs in `/etc/subuid` and `/etc/subgid`. Podman uses the system's UID/GID mapping helpers to create its outer namespace; stage scripts use `unshare` inside it. The build disables container seccomp, AppArmor and SELinux confinement so the nested namespaces and mounts work, but adds no capabilities and never invokes sudo. Host policy must permit user namespaces. Tools inside the Ubuntu 26.04 container supply a recent util-linux with `--map-users=all` support.
 
-Disk assembly runs in a libguestfs appliance inside an unprivileged container. The tools image includes its own kernel and QEMU, so it needs no host NBD devices or host filesystem mounts. This removes assembly's privileged mode; rootfs construction still requires the privileges described above. Without KVM, the appliance uses TCG. Set `LIBGUESTFS_BACKEND_SETTINGS=force_tcg` to force software emulation and `LIBGUESTFS_MEMSIZE` to change its default 2048 MiB of RAM.
+Docker remains available via `CONTAINER_ENGINE=docker`, using a Buildx builder named `101strap` by default. `BUILDX_BUILDER` selects another builder. This compatibility path still requires the `security.insecure` entitlement to let stage commands create namespaces and mounts; a rootful Docker daemon retains host privileges. Use rootless Podman for a build without a privileged daemon. Engine commands use the caller's existing access and never automatically elevate privileges.
+
+Disk assembly runs in a libguestfs appliance inside an unprivileged container. The tools image includes its own kernel and QEMU, so it needs no host NBD devices or host filesystem mounts. `/dev/kvm` is passed through only when the caller has read/write access; Podman retains supplementary groups for this device (requires the crun runtime). Without KVM, the appliance uses TCG. Set `LIBGUESTFS_BACKEND_SETTINGS=force_tcg` to force software emulation and `LIBGUESTFS_MEMSIZE` to change its default 2048 MiB of RAM.
 
 Stage-specific `COPY` instructions control cache invalidation. The repository remains the build context even though the rendered recipe is temporary. Builds check for an updated Ubuntu base image. Package repository changes alone do not invalidate an existing layer; change `CACHE_EPOCH` to refresh packages, then keep that value for retries.
 
@@ -45,7 +49,7 @@ Stage-specific `COPY` instructions control cache invalidation. The repository re
 CACHE_EPOCH=refresh-1 FORMAT=qcow2 ./build.sh
 
 # Build the rootfs without allocating a disk.
-ARCH=amd64 python3 rootfs/build.py --engine docker --target configured
+ARCH=amd64 python3 rootfs/build.py --engine podman --target configured
 
 # Inspect the generated recipe.
 python3 rootfs/build.py --engine docker --render
@@ -55,9 +59,9 @@ python3 rootfs/build.py --engine docker --render
 
 ## Architecture and mirrors
 
-Native builds support amd64 and arm64. Cross-building arm64 on x86_64 requires a static QEMU user emulator and an enabled `qemu-aarch64` binfmt handler with the `F` flag. The scripts check this before starting the image build. Cross-bootstrap uses debootstrap's foreign and second stages.
+Native builds support amd64 and arm64. Cross-building arm64 on x86_64 requires Linux 6.7 or newer for binfmt_misc in user namespaces. Each stage mounts a private binfmt_misc instance and registers the tools image's static QEMU AArch64 interpreter with `F`, keeping it available across chroot. Cleanup unmounts this instance; namespace teardown releases its rules and interpreter references. The host needs no binfmt registration or QEMU installation.
 
-The libguestfs appliance has a separate kernel. For cross-assembly, [image/run-arm64.sh](image/run-arm64.sh) uses native static BusyBox to register a static AArch64 interpreter inside that appliance. It keeps binfmt_misc mounted for each guest command and unmounts it afterward. KVM accelerates the native appliance; ARM64 commands still use QEMU user emulation. The host's binfmt registration is used only for rootfs construction. Temporary emulation helpers are removed from the delivered image.
+The libguestfs appliance has a separate kernel. For cross-assembly, [image/run-arm64.sh](image/run-arm64.sh) uses native static BusyBox to register a static AArch64 interpreter inside that appliance. It keeps binfmt_misc mounted for each guest command and unmounts it afterward. KVM accelerates the native appliance; ARM64 commands still use QEMU user emulation. Temporary emulation helpers are removed from the delivered image.
 
 amd64 supports `FORMAT=all` and `FORMAT=qcow2`; arm64 supports qcow2 only. The amd64 desktop includes VMware and VirtualBox integration packages; arm64 includes `spice-vdagent`.
 
