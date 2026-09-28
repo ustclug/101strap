@@ -39,7 +39,7 @@ jobs:
       ARCH: ${{ matrix.arch }}
       CACHE_EPOCH: ${{ inputs.cache_epoch }}
       CONTAINER_CACHE: gha
-      BUILDX_BUILDER: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+      BUILDX_BUILDER: builder-101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
       BUILD_CONTAINER_NAME: 101strap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
       LIBGUESTFS_BACKEND: direct
     steps:

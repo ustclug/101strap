@@ -231,7 +231,7 @@ def main():
         )
 
     engine_command = [args.engine]
-    builder_name = os.environ.get("BUILDX_BUILDER", "101strap")
+    builder_name = os.environ.get("BUILDX_BUILDER", "builder-101strap")
     if args.engine == "docker":
         prepare_docker_builder(engine_command, builder_name)
         if args.builder_cidfile:

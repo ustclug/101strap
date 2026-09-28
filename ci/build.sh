@@ -53,7 +53,7 @@ main() {
             free -h
             du -sh dist 2>/dev/null || true
             timeout 10s docker system df || true
-            timeout 10s docker buildx du --builder "${BUILDX_BUILDER:-101strap}" || true
+            timeout 10s docker buildx du --builder "${BUILDX_BUILDER:-builder-101strap}" || true
             sleep 30
         done
     ) > "$RUNNER_TEMP/101strap/resources.log" 2>&1 &
