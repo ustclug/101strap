@@ -65,11 +65,11 @@ jobs:
         with:
           name: 101strap-qcow2-${{ matrix.arch }}
           path: |
-            build101/${{ matrix.arch }}/root.qcow2
-            build101/${{ matrix.arch }}/build-info.txt
-            build101/${{ matrix.arch }}/packages.tsv
-            build101/${{ matrix.arch }}/build-sources.sha256
-            build101/${{ matrix.arch }}/SHA256SUMS
+            dist/${{ matrix.arch }}/root.qcow2
+            dist/${{ matrix.arch }}/build-info.txt
+            dist/${{ matrix.arch }}/packages.tsv
+            dist/${{ matrix.arch }}/build-sources.sha256
+            dist/${{ matrix.arch }}/SHA256SUMS
           if-no-files-found: error
           compression-level: 1
           retention-days: 7

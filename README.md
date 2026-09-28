@@ -12,7 +12,7 @@ FORMAT=qcow2 ./build.sh             # amd64: qcow2 only
 ARCH=arm64 ./build.sh               # arm64: qcow2
 ```
 
-Outputs are in `build101/<arch>/`. Move previous builds aside before rebuilding; verify downloads with `sha256sum -c SHA256SUMS` in the output directory.
+Outputs are in `dist/<arch>/`. Move previous builds aside before rebuilding; verify downloads with `sha256sum -c SHA256SUMS` in the output directory.
 
 Use a native host for each architecture, or build arm64 on x86_64 with Linux 6.7 or newer.
 

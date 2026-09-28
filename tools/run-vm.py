@@ -112,7 +112,7 @@ def qemu_command(platform, *, disk, firmware_code, firmware_variables, accelerat
 
 def launch(architecture):
     platform = PLATFORMS[architecture]
-    disk = REPO / "build101" / architecture / "root.qcow2"
+    disk = REPO / "dist" / architecture / "root.qcow2"
     if not os.access(disk, os.R_OK):
         raise ValueError(f"Cannot read disk: {disk}")
     if shutil.which(platform.emulator) is None:
