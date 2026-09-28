@@ -119,5 +119,13 @@ shutdown
 EOF_FISH
 
 guestfish --network -f "$work/assemble.fish"
-# The appliance has exited and flushed the disk before hashing or exporting.
+# Compress only after the appliance has exited and flushed the disk.
+# Keep the original until conversion succeeds; rename on the same filesystem.
+compressed_dir=$(mktemp -d "$WORKSPACE/.compress.XXXXXX")
+trap 'rm -rf -- "$work" "$compressed_dir"' EXIT
+echo "Compressing qcow2 with zlib"
+qemu-img convert -p -f qcow2 -O qcow2 -c -o compression_type=zlib \
+    "$WORKSPACE/root.qcow2" "$compressed_dir/root.qcow2"
+qemu-img check "$compressed_dir/root.qcow2"
+mv -f -- "$compressed_dir/root.qcow2" "$WORKSPACE/root.qcow2"
 bash /srv/image/checksums.sh "$WORKSPACE"
