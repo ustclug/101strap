@@ -70,9 +70,10 @@ class Cleanup:
         self.run(["docker", "system", "df"])
 
         success = True
-        # Always attempt both cleanups; a builder failure must not hide an
+        # Always attempt all cleanups; a builder failure must not hide an
         # assembly failure, and an assembly failure must not skip the builder.
         for filename, name in (
+            ("container.cid.export", "export"),
             ("container.cid", "container"),
             ("buildkit.cid", "buildkit"),
         ):

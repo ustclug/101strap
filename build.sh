@@ -24,10 +24,6 @@ case "$(uname -m):$ARCH" in
     *) echo "Unsupported build host/target: $(uname -m)/$ARCH" >&2; exit 1 ;;
 esac
 
-stage=configured
-if [[ "$FORMAT" == all ]]; then
-    stage=exporter
-fi
 mkdir -p -- "$OUTPUT_DIR"
 SOURCE_COMMIT=unknown
 SOURCE_DIRTY=unknown
@@ -43,9 +39,9 @@ rootfs_options=()
 if [[ -n "${BUILDER_CIDFILE:-}" ]]; then
     rootfs_options+=(--builder-cidfile "$BUILDER_CIDFILE")
 fi
-python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target "$stage" \
-    --tag "local/101strap:$stage" "${rootfs_options[@]}"
-ROOTFS_IMAGE_ID=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "local/101strap:$stage")
+python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target configured \
+    --tag local/101strap:configured "${rootfs_options[@]}"
+ROOTFS_IMAGE_ID=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' local/101strap:configured)
 
 container_options=()
 if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
@@ -67,3 +63,20 @@ fi
     -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" -e "ARCH=$ARCH" -e "FORMAT=$FORMAT" \
     -e "ROOTFS_IMAGE_ID=$ROOTFS_IMAGE_ID" -e "CACHE_EPOCH=$CACHE_EPOCH" -e "SOURCE_COMMIT=$SOURCE_COMMIT" -e "SOURCE_DIRTY=$SOURCE_DIRTY" \
     "$ROOTFS_IMAGE_ID"
+
+if [[ "$FORMAT" == all ]]; then
+    python3 rootfs/build.py --engine "$CONTAINER_ENGINE" --target exporter \
+        --tag local/101strap:exporter "${rootfs_options[@]}"
+    EXPORTER_IMAGE_ID=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' local/101strap:exporter)
+    export_options=()
+    if [[ -n "${BUILD_CONTAINER_NAME:-}" ]]; then
+        export_options+=(--name "$BUILD_CONTAINER_NAME-export")
+    fi
+    if [[ -n "${BUILD_CONTAINER_CIDFILE:-}" ]]; then
+        export_options+=(--cidfile "$BUILD_CONTAINER_CIDFILE.export")
+    fi
+    "$CONTAINER_ENGINE" run --init --rm "${export_options[@]}" \
+        -v "$PWD:/srv:ro" -v "$OUTPUT_DIR:/target" \
+        -e "ARCH=$ARCH" -e "BUILD_MIRROR_MODE=$BUILD_MIRROR_MODE" \
+        "$EXPORTER_IMAGE_ID"
+fi

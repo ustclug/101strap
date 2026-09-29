@@ -23,7 +23,7 @@ Start CI builds through **Actions → qcow2 images → Run workflow**. Successfu
 On an x86_64 Linux host, place an amd64 image built by this project at `dist/amd64/root.qcow2` (rename the Release download `101strap-amd64.qcow2`, or extract the amd64 CI artifact there). Run from the repository root:
 
 ```sh
-# Prepare the export tools; skip if local/101strap:exporter already exists.
+# Build the export tools (cached on subsequent runs).
 ARCH=amd64 python3 rootfs/build.py --engine podman --target exporter \
     --tag local/101strap:exporter
 
@@ -32,7 +32,7 @@ podman run --init --rm \
     -e ARCH=amd64 local/101strap:exporter bash /srv/image/export.sh
 ```
 
-This produces `root.vmdk`, `root.vdi`, VMware and VirtualBox OVA files, and updates `SHA256SUMS` in the same directory. Move existing exports aside first; the script refuses to overwrite them. The source qcow2 is preserved. Preparing the exporter reuses cached build stages, but builds the rootfs stages too if the cache is missing. To use Docker, replace `podman` in both commands with `docker`.
+This produces `root.vmdk`, `root.vdi`, VMware and VirtualBox OVA files, and updates `SHA256SUMS` in the same directory. Move existing exports aside first; the script refuses to overwrite them. The source qcow2 is preserved. Preparing the exporter builds only the export tools; no guest rootfs is needed. To use Docker, replace `podman` in both commands with `docker`.
 
 ## Run
 

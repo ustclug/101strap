@@ -5,9 +5,9 @@
 ## Build flow
 
 1. [build.sh](build.sh) reads the configuration, selects Docker or Podman, and checks the host architecture and output directory.
-2. [rootfs/build.py](rootfs/build.py) renders the container recipe and builds stages through `configured`, or `exporter` for `FORMAT=all`.
+2. [rootfs/build.py](rootfs/build.py) renders the container recipe and builds the rootfs stages through `configured`.
 3. The host starts an ordinary container with the repository and output directory mounted. If available, `/dev/kvm` is passed through for acceleration.
-4. [image/build.sh](image/build.sh) runs disk assembly and, when requested, the VMware and VirtualBox exports.
+4. [image/build.sh](image/build.sh) runs disk assembly. For `FORMAT=all`, the host then builds the independent `exporter` image and runs [image/export.sh](image/export.sh) in a second container.
 
 [config.sh](config.sh) defines disk size, output format and cache epoch. It sources [rootfs/config.sh](rootfs/config.sh), which defines the Ubuntu release, architecture-specific packages and mirrors.
 
@@ -23,9 +23,9 @@
 | `applications` | Configure Flathub and install Firefox from Mozilla's APT repository. |
 | `kernel` | Install the kernel, GRUB and initramfs tools. |
 | `configured` | Apply the desktop layout, locale, user account, networking and boot settings. |
-| `exporter` | Add VirtualBox and open-vmdk tools for OVA exports. |
+| `exporter` | Build an independent tools image for VMware and VirtualBox exports. |
 
-The `open-vmdk-build` stage builds a pinned source archive and supplies tools to `exporter`.
+The `open-vmdk-build` stage builds a pinned source archive and supplies tools to `exporter`. Both derive from `image` and have no dependency on the guest rootfs stages. `--target exporter` builds only `image` and `exporter`, with open-vmdk built as a dependency. Exporter uses a separate remote cache scope.
 
 [rootfs/unshare.sh](rootfs/unshare.sh) gives each stage its own user, mount, UTS and IPC namespaces. It maps all container UIDs/GIDs unchanged into the child namespace, so package accounts and file ownership survive between layers. The container supplies PID isolation. [rootfs/run-stage.sh](rootfs/run-stage.sh) provides `ROOT`, `chdo` and `inspkg` to the stage scripts, which it sources into the same shell.
 
@@ -102,7 +102,7 @@ The first three files are also installed under `/usr/share/101strap/` in the gue
 
 [The workflow](.github/workflows/qcow2.yml) runs shell syntax checks and ShellCheck on pushes and pull requests. Manual runs build qcow2 images on native amd64 and arm64 runners. Image artifacts and diagnostic logs are retained for seven days.
 
-[ci/build.sh](ci/build.sh) records resource usage and passes explicit container ID paths for cleanup. `BUILDER_CIDFILE` becomes `rootfs/build.py --builder-cidfile`; `BUILD_CONTAINER_CIDFILE` records the assembly container. [ci/cleanup.py](ci/cleanup.py) stops those recorded containers. No host disk disconnection is needed.
+[ci/build.sh](ci/build.sh) records resource usage and passes explicit container ID paths for cleanup. `BUILDER_CIDFILE` becomes `rootfs/build.py --builder-cidfile`; `BUILD_CONTAINER_CIDFILE` records the assembly container. [ci/cleanup.py](ci/cleanup.py) stops those recorded containers, including the optional export container recorded in `container.cid.export`. No host disk disconnection is needed.
 
 Verification runs `qemu-img check`, [ci/verify-image.py](ci/verify-image.py) and checksum validation after the assembly container exits. The Python verifier uses guestfish to inspect the image offline, checking packages, boot files, mirrors, metadata, identity cleanup, removal of temporary helpers and password expiry.
 

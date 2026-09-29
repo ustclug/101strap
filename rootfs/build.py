@@ -191,7 +191,7 @@ def run_stage(build, *, stage, tag):
 
 def stages_through(target):
     if target == "exporter":
-        return (*STAGES, "exporter")
+        return ("image", "exporter")
     return STAGES[: STAGES.index(target) + 1]
 
 
@@ -229,6 +229,8 @@ def main():
             f"101strap-v1-{os.uname().machine}"
             f"-{config.architecture}-{config.mirror_mode}"
         )
+        if args.target == "exporter":
+            cache_scope += "-exporter"
 
     engine_command = [args.engine]
     builder_name = os.environ.get("BUILDX_BUILDER", "builder-101strap")
