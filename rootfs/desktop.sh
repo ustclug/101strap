@@ -12,7 +12,7 @@ inspkg desktop-base xubuntu-desktop-minimal dpkg vim htop strace bash-completion
     mate-calc mousepad build-essential eog file-roller baobab evince synaptic \
     adwaita-icon-theme command-not-found gparted policykit-1-gnome \
     iputils-ping netplan.io wget gdb git flatpak xdg-desktop-portal-gtk \
-    gnome-software gnome-software-plugin-flatpak gnome-software-plugin-deb libgles2 psmisc
+    libgles2 psmisc
 
 if [[ "$ARCH" == amd64 ]]; then
     inspkg xserver-xorg-video-vmware xserver-xorg-video-fbdev xserver-xorg-video-qxl \
