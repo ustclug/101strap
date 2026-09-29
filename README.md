@@ -28,7 +28,7 @@ ARCH=amd64 python3 rootfs/build.py --engine podman --target exporter \
     --tag local/101strap:exporter
 
 podman run --init --rm \
-    -v "$PWD:/srv:ro" -v "$PWD/dist/amd64:/target" \
+    -v "$(pwd):/srv:ro" -v "$(pwd)/dist/amd64:/target" \
     -e ARCH=amd64 local/101strap:exporter bash /srv/image/export.sh
 ```
 
